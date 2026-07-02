@@ -12,5 +12,12 @@ fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9 # required by FastAPI for file uploads
 
+# --- PDF report export (pick ONE; both optional) ---
+# playwright is the most reliable cross-platform choice (esp. Windows):
+#     pip install playwright && playwright install chromium
+# weasyprint is pure-Python but needs native GTK/Pango libs on Windows.
+playwright>=1.44.0
+# weasyprint>=62.0
+
 # --- dev / test ---
 pytest>=8.0.0

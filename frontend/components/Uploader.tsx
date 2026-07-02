@@ -6,7 +6,7 @@ import { analyzeFile } from "@/lib/api";
 export function Uploader({
   onReport,
 }: {
-  onReport: (r: AnalysisReport) => void;
+  onReport: (r: AnalysisReport, file: File, intel: boolean) => void;
 }) {
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -22,7 +22,7 @@ export function Uploader({
       setFilename(file.name);
       try {
         const report = await analyzeFile(file, intel);
-        onReport(report);
+        onReport(report, file, intel);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Analysis failed");
       } finally {

@@ -189,7 +189,11 @@ _TEMPLATE = """<!doctype html><html><head><meta charset="utf-8">
 <style>
 :root{{--bg:#0b0e14;--panel:#151a23;--panel2:#1c2230;--tx:#e6e9ef;--mut:#8b94a7;--line:#262d3b;}}
 *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--tx);
-font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}}
+font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;
+-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+.pdfbar{{position:fixed;top:14px;right:16px;z-index:50}}
+.pdfbar button{{background:#7c9cff;color:#0b0e14;border:none;border-radius:8px;
+padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer}}
 .wrap{{max-width:1100px;margin:0 auto;padding:28px 20px 80px}}
 h1{{font-size:22px;margin:0}} h2{{font-size:15px;text-transform:uppercase;letter-spacing:.08em;
 color:var(--mut);margin:34px 0 12px;border-bottom:1px solid var(--line);padding-bottom:6px}}
@@ -224,7 +228,29 @@ table.heat .empty{{background:var(--panel)}} table.heat b{{font-size:11px}}
 .real{{background:#7f1d1d;color:#fecaca;font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px}}
 .proc{{font-family:monospace;font-size:12.5px;padding:1px 0}}
 footer{{margin-top:40px;color:var(--mut);font-size:12px;border-top:1px solid var(--line);padding-top:14px}}
-</style></head><body><div class="wrap">
+
+/* --- print / PDF: light, ink-friendly, no cross-page splits --- */
+@media print {{
+  @page {{ size: A4; margin: 14mm 12mm; }}
+  :root{{--bg:#fff;--panel:#fff;--panel2:#f2f4f8;--tx:#111;--mut:#555;--line:#ccc;}}
+  body{{background:#fff;color:#111;font-size:11px}}
+  .wrap{{max-width:none;padding:0}}
+  a{{color:#111}}
+  h1{{font-size:18px}} h2{{color:#333;margin:18px 0 8px;page-break-after:avoid}}
+  .card,.finding,.ioc-group{{page-break-inside:avoid;box-shadow:none}}
+  tr,.proc{{page-break-inside:avoid}}
+  thead{{display:table-header-group}}
+  .banner{{page-break-inside:avoid}}
+  /* Heatmap cells: keep colored fills when printing backgrounds is enabled. */
+  table.heat .tech span{{color:#3a1005}}
+  .badge{{border-color:#bbb}}
+  .pill{{background:#fbe9ee;border-color:#e5b3c1;color:#7a2740}}
+  .loc{{color:#3b6}}
+  .no-print{{display:none !important}}
+}}
+</style></head><body>
+<div class="pdfbar no-print"><button onclick="window.print()">⬇ Save as PDF</button></div>
+<div class="wrap">
 <h1>ReQuiem <span class="muted">· Malware Analysis Report</span></h1>
 <div class="banner">
   <div class="vchip" style="background:{vcolor}">{verdict}</div>

@@ -128,6 +128,21 @@ def _cmd_analyze(args) -> int:
         with open(args.html, "w", encoding="utf-8") as fh:
             fh.write(html.render(report))
         print(f"  HTML  -> {args.html}")
+    if args.pdf:
+        from ..report import pdf as pdf_report
+        try:
+            data_pdf = pdf_report.render_pdf(report)
+        except pdf_report.PDFUnavailable as e:
+            print(f"  PDF   -> skipped: {e}", file=sys.stderr)
+            # Graceful fallback: write the print-ready HTML alongside.
+            fallback = args.pdf.rsplit(".", 1)[0] + ".print.html"
+            with open(fallback, "w", encoding="utf-8") as fh:
+                fh.write(html.render(report))
+            print(f"  HTML  -> {fallback}  (open and 'Save as PDF')")
+            return 3
+        with open(args.pdf, "wb") as fh:
+            fh.write(data_pdf)
+        print(f"  PDF   -> {args.pdf}  ({pdf_report.available_backend()})")
     return 0
 
 
@@ -148,6 +163,7 @@ def build_parser() -> argparse.ArgumentParser:
     a = sub.add_parser("analyze", help="analyze a local sample file")
     a.add_argument("file")
     a.add_argument("--html", metavar="PATH", help="write HTML report")
+    a.add_argument("--pdf", metavar="PATH", help="write PDF report (needs weasyprint or playwright)")
     a.add_argument("--json", metavar="PATH", help="write JSON report")
     a.add_argument("--intel", action="store_true", help="perform online hash-reputation lookup")
     a.add_argument("--no-dynamic", action="store_true", help="skip (simulated) dynamic stage")

@@ -7,21 +7,29 @@ import { FindingsList } from "./FindingsList";
 import { ProcessTree } from "./ProcessTree";
 import { SectionsView } from "./SectionsView";
 import { IOCPanel } from "./IOCPanel";
+import { PdfButton } from "./PdfButton";
 
 export function ReportView({
   report,
+  sourceFile,
+  intel,
   onReset,
 }: {
   report: AnalysisReport;
+  sourceFile: File | null;
+  intel: boolean;
   onReset: () => void;
 }) {
   return (
     <div className="fade-in">
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 24 }}>
         <h1 style={{ fontSize: 22, margin: 0 }}>Analysis Report</h1>
         <button className="btn btn-ghost small" onClick={onReset}>
           ← New investigation
         </button>
+        <div style={{ marginLeft: "auto" }}>
+          <PdfButton sourceFile={sourceFile} intel={intel} />
+        </div>
       </div>
 
       <VerdictBanner report={report} />

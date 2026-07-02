@@ -45,6 +45,10 @@ python -m requiem.cli analyze sample.exe
 # ...and write a self-contained HTML report + machine-readable JSON
 python -m requiem.cli analyze sample.exe --html report.html --json report.json
 
+# ...or a PDF report (needs a PDF backend — see below; falls back to
+# print-ready HTML if none is installed)
+python -m requiem.cli analyze sample.exe --pdf report.pdf
+
 # Online hash-reputation lookup (MalwareBazaar; VirusTotal if VT_API_KEY set)
 python -m requiem.cli analyze sample.exe --intel
 python -m requiem.cli hash <sha256> --online
@@ -67,11 +71,26 @@ uvicorn requiem.api.app:app --reload
 
 | Method | Route              | Purpose                                   |
 |--------|--------------------|-------------------------------------------|
-| POST   | `/analyze`         | multipart upload → full JSON report       |
-| POST   | `/analyze/html`    | multipart upload → rendered HTML report   |
-| GET    | `/hash/{hash}`     | metadata-only intel lookup                |
-| GET    | `/attack/matrix`   | ATT&CK catalog for drawing the heatmap    |
-| GET    | `/healthz`         | liveness                                  |
+| POST   | `/analyze`             | multipart upload → full JSON report                    |
+| POST   | `/analyze/html`        | multipart upload → rendered HTML report                |
+| POST   | `/analyze/pdf`         | multipart upload → PDF (or print-ready HTML fallback)  |
+| GET    | `/report/pdf-available`| which PDF backend, if any, is installed                |
+| GET    | `/hash/{hash}`         | metadata-only intel lookup                             |
+| GET    | `/attack/matrix`       | ATT&CK catalog for drawing the heatmap                 |
+| GET    | `/healthz`             | liveness                                               |
+
+### PDF reports
+
+PDF is generated **from the same HTML report** (one source of truth) via the
+first available backend, and degrades gracefully:
+
+1. **Playwright** (`pip install playwright && playwright install chromium`) —
+   most reliable cross-platform, recommended.
+2. **WeasyPrint** (`pip install weasyprint`) — pure-Python, but needs native
+   GTK/Pango libraries on Windows.
+3. **Neither installed** — no failure: the CLI/API return the print-ready HTML
+   (light theme, page-break-aware) with a **Save as PDF** button, and the web
+   UI's PDF button falls back to browser print-to-PDF.
 
 ## Use it — web UI (Next.js)
 

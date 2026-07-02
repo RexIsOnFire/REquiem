@@ -4,6 +4,7 @@ Thin HTTP layer over the pipeline so a React/Next.js frontend (or curl) can:
 
     POST /analyze      multipart file upload  -> full JSON report
     POST /analyze/html multipart file upload  -> rendered HTML report
+    POST /analyze/pdf  multipart file upload  -> PDF report (or print-ready HTML)
     GET  /hash/{hash}                          -> metadata-only intel lookup
     GET  /attack/matrix                        -> tactic/technique catalog for the heatmap
     GET  /healthz
@@ -19,10 +20,12 @@ from ..core.pipeline import PipelineOptions, analyze
 from ..intel.base import gather_intel
 from ..intel.providers import default_providers
 from ..report import html
+from ..report import pdf as pdf_report
 
 try:
     from fastapi import FastAPI, File, UploadFile, Query
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, Response
+    from fastapi.concurrency import run_in_threadpool
 except Exception as exc:  # pragma: no cover
     raise SystemExit("FastAPI not installed. `pip install fastapi uvicorn` to use the API.") from exc
 
@@ -81,3 +84,35 @@ async def analyze_upload_html(file: UploadFile = File(...), intel: bool = Query(
         return HTMLResponse(status_code=413, content="<h1>File too large</h1>")
     report = analyze(data, file.filename or "upload.bin", _options(intel))
     return HTMLResponse(html.render(report))
+
+
+@app.get("/report/pdf-available")
+def pdf_available():
+    """Lets the frontend decide whether to offer a true-PDF download or the
+    print-to-PDF HTML fallback."""
+    return {"backend": pdf_report.available_backend()}
+
+
+@app.post("/analyze/pdf")
+async def analyze_upload_pdf(file: UploadFile = File(...), intel: bool = Query(False)):
+    data = await file.read()
+    if len(data) > _MAX_BYTES:
+        return JSONResponse(status_code=413, content={"error": "file too large"})
+    report = analyze(data, file.filename or "upload.bin", _options(intel))
+    stem = (file.filename or "report").rsplit(".", 1)[0]
+    try:
+        # PDF backends (Playwright sync API, WeasyPrint) are blocking and must
+        # not run on the event loop — offload to a worker thread.
+        pdf_bytes = await run_in_threadpool(pdf_report.render_pdf, report)
+    except pdf_report.PDFUnavailable:
+        # Graceful fallback: return the print-ready HTML with a header the
+        # frontend can detect, so the user still gets a save-as-PDF path.
+        return HTMLResponse(
+            html.render(report),
+            headers={"X-ReQuiem-PDF": "unavailable-html-fallback"},
+        )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'},
+    )

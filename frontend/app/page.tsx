@@ -6,9 +6,24 @@ import { ReportView } from "@/components/ReportView";
 
 export default function Home() {
   const [report, setReport] = useState<AnalysisReport | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [intel, setIntel] = useState(false);
+
+  function handleReport(r: AnalysisReport, f: File, usedIntel: boolean) {
+    setReport(r);
+    setFile(f);
+    setIntel(usedIntel);
+  }
+
+  function reset() {
+    setReport(null);
+    setFile(null);
+  }
 
   if (report) {
-    return <ReportView report={report} onReset={() => setReport(null)} />;
+    return (
+      <ReportView report={report} sourceFile={file} intel={intel} onReset={reset} />
+    );
   }
 
   return (
@@ -26,7 +41,7 @@ export default function Home() {
         One upload · one investigation · one report · one ATT&amp;CK view · one IOC export
       </p>
 
-      <Uploader onReport={setReport} />
+      <Uploader onReport={handleReport} />
 
       <div className="grid" style={{ marginTop: 28 }}>
         <Feature
