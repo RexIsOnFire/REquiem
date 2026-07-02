@@ -10,28 +10,17 @@ type Tab = "upload" | "hash";
 
 export default function Home() {
   const [report, setReport] = useState<AnalysisReport | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [intel, setIntel] = useState(false);
   const [tab, setTab] = useState<Tab>("upload");
   const { register } = useInvestigation();
 
-  function handleReport(r: AnalysisReport, f: File, usedIntel: boolean) {
+  // PDF now renders server-side from the report itself, so we no longer need to
+  // retain the source File.
+  function handleReport(r: AnalysisReport) {
     setReport(r);
-    setFile(f);
-    setIntel(usedIntel);
-  }
-
-  // Hash-investigation reports have no local source file (PDF export falls back
-  // to browser print).
-  function handleHashReport(r: AnalysisReport) {
-    setReport(r);
-    setFile(null);
-    setIntel(true);
   }
 
   function reset() {
     setReport(null);
-    setFile(null);
     setTab("upload");
   }
 
@@ -39,9 +28,7 @@ export default function Home() {
   useEffect(() => register(reset), [register]);
 
   if (report) {
-    return (
-      <ReportView report={report} sourceFile={file} intel={intel} onReset={reset} />
-    );
+    return <ReportView report={report} onReset={reset} />;
   }
 
   return (
@@ -73,7 +60,7 @@ export default function Home() {
       {tab === "upload" ? (
         <Uploader onReport={handleReport} />
       ) : (
-        <HashLookup onReport={handleHashReport} />
+        <HashLookup onReport={handleReport} />
       )}
 
       <div className="grid" style={{ marginTop: 28 }}>

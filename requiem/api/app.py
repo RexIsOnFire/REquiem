@@ -23,7 +23,7 @@ from ..report import html
 from ..report import pdf as pdf_report
 
 try:
-    from fastapi import FastAPI, File, UploadFile, Query
+    from fastapi import FastAPI, File, UploadFile, Query, Body
     from fastapi.responses import HTMLResponse, JSONResponse, Response
     from fastapi.concurrency import run_in_threadpool
 except Exception as exc:  # pragma: no cover
@@ -135,6 +135,23 @@ def pdf_available():
     """Lets the frontend decide whether to offer a true-PDF download or the
     print-to-PDF HTML fallback."""
     return {"backend": pdf_report.available_backend()}
+
+
+@app.post("/report/pdf")
+async def report_pdf(payload: dict = Body(...)):
+    """Render a PDF from an already-computed report (from /analyze or
+    /investigate). Works for uploads AND hash investigations — no file needed,
+    always uses the print-optimized HTML (not the live dark DOM)."""
+    from ..core.models import AnalysisReport
+    report = AnalysisReport.from_dict(payload)
+    stem = (report.identity.filename or "report").rsplit(".", 1)[0].strip("… ") or "report"
+    try:
+        pdf_bytes = await run_in_threadpool(pdf_report.render_pdf, report)
+    except pdf_report.PDFUnavailable:
+        return HTMLResponse(html.render(report),
+                            headers={"X-ReQuiem-PDF": "unavailable-html-fallback"})
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'})
 
 
 @app.post("/analyze/pdf")

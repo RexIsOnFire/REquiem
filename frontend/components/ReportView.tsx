@@ -15,13 +15,9 @@ import { PdfButton } from "./PdfButton";
 
 export function ReportView({
   report,
-  sourceFile,
-  intel,
   onReset,
 }: {
   report: AnalysisReport;
-  sourceFile: File | null;
-  intel: boolean;
   onReset: () => void;
 }) {
   return (
@@ -32,7 +28,7 @@ export function ReportView({
           ← New investigation
         </button>
         <div style={{ marginLeft: "auto" }}>
-          <PdfButton sourceFile={sourceFile} intel={intel} />
+          <PdfButton report={report} />
         </div>
       </div>
 

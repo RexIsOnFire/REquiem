@@ -336,6 +336,13 @@ class AnalysisReport:
     def to_dict(self) -> dict[str, Any]:
         return _asdict(self)
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AnalysisReport":
+        """Reconstruct a report from :meth:`to_dict` output (round-trips enums,
+        nested dataclasses, and lists). Used to re-render a report to PDF/HTML
+        without re-running analysis."""
+        return _fromdict(cls, data)
+
 
 def _asdict(obj: Any) -> Any:
     """dataclasses.asdict that renders enums as ``{name, value}`` for the UI."""
@@ -348,3 +355,33 @@ def _asdict(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {k: _asdict(v) for k, v in obj.items()}
     return obj
+
+
+import typing
+
+
+def _fromdict(tp: Any, value: Any) -> Any:
+    """Inverse of :func:`_asdict`, guided by dataclass field type hints."""
+    # Enum encoded as {"name","value"}.
+    if isinstance(tp, type) and issubclass(tp, enum.Enum):
+        if isinstance(value, dict):
+            return tp[value["name"]]
+        return tp(value)
+    if dataclasses.is_dataclass(tp) and isinstance(value, dict):
+        hints = typing.get_type_hints(tp)
+        kwargs = {}
+        for f in dataclasses.fields(tp):
+            if f.name in value:
+                kwargs[f.name] = _fromdict(hints.get(f.name, Any), value[f.name])
+        return tp(**kwargs)
+    origin = typing.get_origin(tp)
+    if origin in (list, tuple) and isinstance(value, list):
+        (elem_tp,) = typing.get_args(tp) or (Any,)
+        return [_fromdict(elem_tp, v) for v in value]
+    # Optional[X] / Union — try the first non-None arg.
+    if origin is typing.Union:
+        args = [a for a in typing.get_args(tp) if a is not type(None)]
+        if value is None:
+            return None
+        return _fromdict(args[0], value) if args else value
+    return value
