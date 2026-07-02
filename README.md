@@ -73,6 +73,24 @@ uvicorn requiem.api.app:app --reload
 | GET    | `/attack/matrix`   | ATT&CK catalog for drawing the heatmap    |
 | GET    | `/healthz`         | liveness                                  |
 
+## Use it — web UI (Next.js)
+
+The `frontend/` app is the full workbench: drag-drop upload, verdict banner,
+interactive ATT&CK heatmap, expandable evidence-backed findings, process tree,
+entropy visualization, and one-click IOC export.
+
+```bash
+# 1. start the backend
+uvicorn requiem.api.app:app --port 8000
+
+# 2. start the frontend (proxies /api/* -> :8000, so no CORS setup needed)
+cd frontend
+npm install
+npm run dev            # http://localhost:3000
+```
+
+Point the proxy at a non-default backend with `NEXT_PUBLIC_API_BASE`.
+
 ## What it detects
 
 | Stage | Output |
@@ -99,6 +117,11 @@ requiem/
 ├── report/      html (self-contained report + heatmap)
 ├── api/         FastAPI app
 └── cli/         command-line entry point
+
+frontend/        Next.js App Router UI (TypeScript, hand-rolled SVG/CSS visuals)
+├── app/         layout · landing/upload page
+├── components/  VerdictBanner · AttackHeatmap · FindingsList · ProcessTree · …
+└── lib/         api client · types (mirror of the Python model) · theme
 ```
 
 The pipeline is a **pure function** (`analyze(bytes, name) -> AnalysisReport`),
@@ -110,8 +133,8 @@ mechanical change.
 - Real sandbox backend (CAPE integration behind `DynamicBackend`)
 - PDF export of reports
 - CFG generation / disassembly view
-- Next.js frontend (process-tree graph, interactive ATT&CK heatmap, memory viz)
 - Family-level YARA signatures
+- Memory-region visualization in the UI (heap growth / RWX map)
 
 ## Safety & scope
 
