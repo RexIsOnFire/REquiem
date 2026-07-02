@@ -17,6 +17,7 @@ import urllib.request
 from ..core.models import DynamicBehavior, FileIdentity
 from . import normalize as N
 from .base import DynamicBackend
+from .cloud import CloudBehaviorProvider, CloudLookup
 from .sandbox_http import SandboxError, get_json, multipart
 
 
@@ -148,3 +149,44 @@ class TriageBackend(DynamicBackend):
             raise SandboxError("Triage produced no behavioral task")
         report = self._report(sample_id, tasks[0])
         return N.to_behavior(to_normalized(report), backend_name=self.name)
+
+    # --- CloudBehaviorProvider: look up an EXISTING report by hash ---------
+    def _search_sample(self, sha256: str) -> str | None:
+        """Return the newest sample id tria.ge already has for this hash."""
+        res = get_json(self.url + f"/api/v0/search?query=sha256:{sha256}",
+                       self._headers(), self.http_timeout)
+        data = res.get("data") or []
+        return data[0].get("id") if data else None
+
+    def _behavioral_task(self, sample_id: str) -> str | None:
+        overview = get_json(self.url + f"/api/v0/samples/{sample_id}/overview.json",
+                            self._headers(), self.http_timeout)
+        for t in overview.get("tasks", []):
+            if t.get("kind") == "behavioral" or "behavioral" in t.get("id", ""):
+                return t.get("id")
+        return None
+
+    def lookup(self, *, sha256: str) -> CloudLookup:
+        """No upload — pull an existing tria.ge behavioral report by hash."""
+        if not self.token:
+            return CloudLookup(source=self.name, found=False,
+                               note="TRIAGE_TOKEN not configured")
+        try:
+            sample_id = self._search_sample(sha256)
+            if not sample_id:
+                return CloudLookup(source=self.name, found=False,
+                                   note="hash not found on tria.ge")
+            task = self._behavioral_task(sample_id)
+            if not task:
+                return CloudLookup(source=self.name, found=False,
+                                   note="no behavioral task for this sample")
+            report = self._report(sample_id, task)
+            beh = N.to_behavior(to_normalized(report), backend_name=f"{self.name} (cloud)")
+            return CloudLookup(source=self.name, found=True, behavior=beh)
+        except SandboxError as e:
+            return CloudLookup(source=self.name, found=False, note=str(e))
+
+
+# Register Triage as a cloud-behavior provider without multiple inheritance
+# noise: the methods above satisfy the CloudBehaviorProvider protocol.
+CloudBehaviorProvider.register(TriageBackend)

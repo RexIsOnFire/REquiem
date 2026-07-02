@@ -34,6 +34,19 @@ export async function getAttackMatrix(): Promise<AttackMatrix> {
   return res.json();
 }
 
+// Full by-hash cloud investigation: intel + existing cloud detonation
+// (Triage/VT/Hybrid Analysis) -> a report with behavior + ATT&CK. No upload.
+export async function investigateHash(hash: string): Promise<{
+  hash: string;
+  note: string;
+  sources: { source: string; found: boolean; note: string }[];
+  report: AnalysisReport;
+}> {
+  const res = await fetch(`${BASE}/investigate/${encodeURIComponent(hash)}`);
+  if (!res.ok) throw new Error(`Investigation failed (${res.status})`);
+  return res.json();
+}
+
 export async function pdfBackendAvailable(): Promise<boolean> {
   try {
     const res = await fetch(`${BASE}/report/pdf-available`);

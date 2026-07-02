@@ -21,6 +21,14 @@ export default function Home() {
     setIntel(usedIntel);
   }
 
+  // Hash-investigation reports have no local source file (PDF export falls back
+  // to browser print).
+  function handleHashReport(r: AnalysisReport) {
+    setReport(r);
+    setFile(null);
+    setIntel(true);
+  }
+
   function reset() {
     setReport(null);
     setFile(null);
@@ -62,7 +70,11 @@ export default function Home() {
         </TabButton>
       </div>
 
-      {tab === "upload" ? <Uploader onReport={handleReport} /> : <HashLookup />}
+      {tab === "upload" ? (
+        <Uploader onReport={handleReport} />
+      ) : (
+        <HashLookup onReport={handleHashReport} />
+      )}
 
       <div className="grid" style={{ marginTop: 28 }}>
         <Feature title="Explainable" body="Every verdict cites the evidence that produced it — click any finding to see the proof." />

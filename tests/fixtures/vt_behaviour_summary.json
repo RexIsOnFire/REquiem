@@ -1,0 +1,33 @@
+{
+  "data": {
+    "processes_tree": [
+      {
+        "name": "invoice.exe",
+        "process_id": "2440",
+        "children": [
+          {"name": "vssadmin.exe", "process_id": "2512", "children": []},
+          {"name": "cmd.exe", "process_id": "2600", "children": [
+            {"name": "bcdedit.exe", "process_id": "2644", "children": []}
+          ]}
+        ]
+      }
+    ],
+    "http_conversations": [
+      {"url": "http://185.220.101.4/gate/checkin", "request_method": "POST", "host": "185.220.101.4"}
+    ],
+    "dns_lookups": [
+      {"hostname": "pay-decrypt.example.onion"}
+    ],
+    "ip_traffic": [
+      {"destination_ip": "185.220.101.4", "destination_port": 80, "transport_layer_protocol": "tcp"}
+    ],
+    "mitre_attack_techniques": [
+      {"id": "T1486", "signature_description": "Data Encrypted for Impact", "severity": "HIGH"},
+      {"id": "T1490", "signature_description": "Inhibit System Recovery", "severity": "HIGH"},
+      {"id": "T1055", "signature_description": "Process Injection", "severity": "MEDIUM"}
+    ],
+    "signature_matches": [
+      {"name": "ransomware_behavior", "description": "Encrypts files with a uniform extension"}
+    ]
+  }
+}

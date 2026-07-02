@@ -177,6 +177,32 @@ The pipeline is a **pure function** (`analyze(bytes, name) -> AnalysisReport`),
 which makes moving it behind a Celery/RQ worker for the production backend a
 mechanical change.
 
+## Investigate by hash — cloud, no local sandbox
+
+The headline feature for a **public deployment**: paste a hash and get a full
+investigation — reputation *and* dynamic behavior — with **no file upload and no
+sandbox to host**. ReQuiem pulls any *existing* cloud detonation for the hash and
+maps it into the same report the rest of the app renders (process tree, network,
+ATT&CK heatmap, findings, verdict).
+
+Sources (each optional, keys-only, all hosted):
+
+- **VirusTotal** `behaviour_summary` (`VT_API_KEY`) — merged multi-engine behavior
+- **Hatching Triage** (`TRIAGE_TOKEN`) — searches tria.ge for an existing report
+- **Hybrid Analysis** (`HYBRIDANALYSIS_API_KEY`) — Falcon Sandbox, free tier
+
+```bash
+# CLI-equivalent via the API:
+curl http://localhost:8000/investigate/<sha256>
+```
+
+In the web UI, the **Hash lookup** tab has two actions: **Reputation**
+(family/tags) and **Investigate** (the full behavioral report). Verified live:
+a WannaCry hash returns 17 process roots, 700+ network events, and 34 ATT&CK
+techniques — from the hash alone.
+
+Nothing is uploaded and no sample is downloaded — ideal for a public-facing app.
+
 ## Real detonation — sandbox backends
 
 By default the dynamic stage is a clearly-badged **simulation** (ReQuiem never

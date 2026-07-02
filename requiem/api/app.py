@@ -80,6 +80,38 @@ def hash_lookup(value: str, online: bool = Query(False)):
     }
 
 
+@app.get("/investigate/{value}")
+async def investigate_by_hash(value: str):
+    """Full by-hash investigation with **no upload and no local sandbox**:
+    reputation intel + any *existing* cloud detonation (Triage / VirusTotal /
+    Hybrid Analysis) mapped into behavior + inferred ATT&CK. This is the
+    public-facing 'paste a hash, get an investigation' path."""
+    from ..dynamic.cloud import (default_cloud_providers, first_behavior,
+                                 gather_cloud_behavior)
+    from ..attack.inference import run_inference
+    from ..core.models import AnalysisReport, FileIdentity, DynamicBehavior
+
+    intel = gather_intel(default_providers(offline=False),
+                         sha256=value, md5=None, sha1=None)
+    cloud = await run_in_threadpool(
+        gather_cloud_behavior, default_cloud_providers(offline=False), sha256=value)
+
+    behavior = first_behavior(cloud) or DynamicBehavior()
+    ident = FileIdentity(filename=f"{value[:16]}…", size=0,
+                         md5="", sha1="", sha256=value, format="unknown")
+    report = AnalysisReport(identity=ident)
+    report.intel = intel
+    report.dynamic = behavior
+    run_inference(report)  # ATT&CK + verdict from the cloud behavior/intel
+
+    return {
+        "hash": value,
+        "note": "By-hash cloud investigation — no file uploaded, no sample downloaded.",
+        "sources": [{"source": c.source, "found": c.found, "note": c.note} for c in cloud],
+        "report": report.to_dict(),
+    }
+
+
 @app.post("/analyze")
 async def analyze_upload(file: UploadFile = File(...), intel: bool = Query(False)):
     data = await file.read()

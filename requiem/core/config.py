@@ -32,6 +32,7 @@ KNOWN_KEYS = (
     "JOE_APIKEY",
     "TRIAGE_URL",
     "TRIAGE_TOKEN",
+    "HYBRIDANALYSIS_API_KEY",
 )
 
 
