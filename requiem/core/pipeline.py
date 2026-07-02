@@ -133,6 +133,7 @@ def analyze(data: bytes, filename: str, options: PipelineOptions | None = None) 
             "ipv4": report.iocs.ipv4,
             "registry_keys": report.iocs.registry_keys,
             "classification": report.classification,
+            "packed": bool(report.packers),
         }
         report.dynamic = backend.detonate(data=data, identity=ident, static_hints=hints)
 

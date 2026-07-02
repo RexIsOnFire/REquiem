@@ -15,9 +15,13 @@ from ..core.models import (
     DynamicBehavior,
     FileIdentity,
     Finding,
+    HeapSample,
+    MemoryRegion,
     Severity,
 )
 from .base import DynamicBackend
+
+_MB = 1024 * 1024
 
 
 class SimulatedBackend(DynamicBackend):
@@ -67,7 +71,71 @@ class SimulatedBackend(DynamicBackend):
 
         # --- memory findings (the ransomware-heap story) ----------------
         beh.memory = self._memory_findings(imports, classification)
+        beh.memory_map = self._memory_map(imports, classification, hints.get("packed", False))
+        beh.heap_timeline = self._heap_timeline(imports, classification)
         return beh
+
+    def _memory_map(
+        self, imports: set[str], classification: str | None, packed: bool
+    ) -> list[MemoryRegion]:
+        """A plausible address-space snapshot keyed off static hints.
+
+        Always includes the image + standard runtime DLLs. Adds an unbacked RWX
+        region when injection APIs are present (shellcode/unpacking), and a
+        large private commit when crypto/ransomware behavior is indicated (the
+        bulk-encryption working set).
+        """
+        regions: list[MemoryRegion] = [
+            MemoryRegion(base=0x140000000, size=2 * _MB, protection="r-x",
+                         kind="image", backed=True, label="sample.exe (.text)"),
+            MemoryRegion(base=0x140200000, size=1 * _MB, protection="rw-",
+                         kind="image", backed=True, label="sample.exe (.data)"),
+            MemoryRegion(base=0x7FF800000000, size=1 * _MB, protection="r-x",
+                         kind="image", backed=True, label="ntdll.dll"),
+            MemoryRegion(base=0x7FF810000000, size=1 * _MB, protection="r-x",
+                         kind="image", backed=True, label="kernel32.dll"),
+            MemoryRegion(base=0x10000, size=256 * 1024, protection="rw-",
+                         kind="stack", backed=False, label="thread stack"),
+        ]
+
+        injects = any(k in i for i in imports
+                      for k in ("virtualallocex", "writeprocessmemory",
+                                "createremotethread", "ntmapviewofsection"))
+        if injects or packed:
+            regions.append(MemoryRegion(
+                base=0x2A0000, size=512 * 1024, protection="rwx",
+                kind="shellcode", backed=False,
+                label="unbacked RWX (unpacked/injected payload)", suspicious=True))
+
+        if classification == "ransomware" or any("crypt" in i for i in imports):
+            regions.append(MemoryRegion(
+                base=0x20000000, size=512 * _MB, protection="rw-",
+                kind="private", backed=False,
+                label="private commit — file-encryption working set",
+                suspicious=True))
+
+        regions.sort(key=lambda r: r.base)
+        return regions
+
+    def _heap_timeline(
+        self, imports: set[str], classification: str | None
+    ) -> list[HeapSample]:
+        """Committed-heap-over-time curve. Flat for benign; a rising staircase
+        with annotated events for the ransomware-encryption workload."""
+        ransomware = classification == "ransomware" or any("crypt" in i for i in imports)
+        if not ransomware:
+            # Benign baseline: small, stable heap.
+            return [HeapSample(t_ms=t, committed=8 * _MB) for t in (0, 500, 1000, 1500, 2000)]
+
+        # Staircase: process init -> AES loop begins -> bulk growth -> plateau.
+        return [
+            HeapSample(t_ms=0, committed=8 * _MB, note="process init"),
+            HeapSample(t_ms=400, committed=24 * _MB, note="key material + buffers"),
+            HeapSample(t_ms=700, committed=80 * _MB, note="AES loop begins"),
+            HeapSample(t_ms=1100, committed=300 * _MB),
+            HeapSample(t_ms=1500, committed=512 * _MB, note="512 MB working set"),
+            HeapSample(t_ms=2000, committed=512 * _MB, note="plateau — bulk encryption"),
+        ]
 
     def _memory_findings(self, imports: set[str], classification: str | None) -> list[Finding]:
         findings: list[Finding] = []

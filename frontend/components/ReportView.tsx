@@ -5,6 +5,8 @@ import { IdentityCards } from "./IdentityCards";
 import { AttackHeatmap } from "./AttackHeatmap";
 import { FindingsList } from "./FindingsList";
 import { ProcessTree } from "./ProcessTree";
+import { MemoryMap } from "./MemoryMap";
+import { HeapTimeline } from "./HeapTimeline";
 import { SectionsView } from "./SectionsView";
 import { IOCPanel } from "./IOCPanel";
 import { PdfButton } from "./PdfButton";
@@ -52,6 +54,20 @@ export function ReportView({
 
       <h2 className="sec">Dynamic Behavior</h2>
       <ProcessTree dynamic={report.dynamic} />
+
+      {report.dynamic.memory_map.length > 0 && (
+        <>
+          <h2 className="sec">Memory Map <span className="muted" style={{ textTransform: "none", letterSpacing: 0 }}>— address-space snapshot</span></h2>
+          <MemoryMap regions={report.dynamic.memory_map} />
+        </>
+      )}
+
+      {report.dynamic.heap_timeline.length > 0 && (
+        <>
+          <h2 className="sec">Heap Growth <span className="muted" style={{ textTransform: "none", letterSpacing: 0 }}>— committed memory over time</span></h2>
+          <HeapTimeline samples={report.dynamic.heap_timeline} />
+        </>
+      )}
 
       <h2 className="sec">Sections &amp; Entropy</h2>
       <SectionsView sections={report.sections} />

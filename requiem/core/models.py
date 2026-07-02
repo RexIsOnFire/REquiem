@@ -148,6 +148,42 @@ class IntelResult:
 
 
 @dataclass
+class MemoryRegion:
+    """One region of the process address space captured during execution.
+
+    This is the structured backbone of the memory visualization. ``kind``
+    classifies the region for coloring; ``backed`` distinguishes image-backed
+    memory (a mapped file/DLL) from private/unbacked allocations (the shape of
+    injected shellcode or an unpacked payload).
+    """
+
+    base: int
+    size: int
+    protection: str            # "rwx", "rw-", "r-x", "r--", etc.
+    kind: str = "private"      # image | mapped | private | heap | stack | shellcode
+    backed: bool = True        # backed by a file/image on disk?
+    label: str = ""            # e.g. "kernel32.dll", "unpacked payload"
+    suspicious: bool = False
+
+    @property
+    def executable(self) -> bool:
+        return "x" in self.protection
+
+    @property
+    def writable(self) -> bool:
+        return "w" in self.protection
+
+
+@dataclass
+class HeapSample:
+    """A point on the heap-growth timeline: committed bytes at time ``t_ms``."""
+
+    t_ms: int
+    committed: int             # total committed heap bytes at this instant
+    note: str = ""             # optional event marker, e.g. "AES loop begins"
+
+
+@dataclass
 class DynamicBehavior:
     """Container for dynamic/sandbox observations (real or simulated)."""
 
@@ -159,6 +195,8 @@ class DynamicBehavior:
     filesystem: list[dict[str, Any]] = field(default_factory=list)
     registry: list[dict[str, Any]] = field(default_factory=list)
     memory: list[Finding] = field(default_factory=list)
+    memory_map: list[MemoryRegion] = field(default_factory=list)
+    heap_timeline: list[HeapSample] = field(default_factory=list)
 
 
 @dataclass

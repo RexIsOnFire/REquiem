@@ -86,6 +86,22 @@ export interface ProcessNode {
   children: ProcessNode[];
 }
 
+export interface MemoryRegion {
+  base: number;
+  size: number;
+  protection: string;
+  kind: string; // image | mapped | private | heap | stack | shellcode
+  backed: boolean;
+  label: string;
+  suspicious: boolean;
+}
+
+export interface HeapSample {
+  t_ms: number;
+  committed: number;
+  note: string;
+}
+
 export interface DynamicBehavior {
   executed: boolean;
   backend: string;
@@ -95,6 +111,8 @@ export interface DynamicBehavior {
   filesystem: Record<string, unknown>[];
   registry: Record<string, unknown>[];
   memory: Finding[];
+  memory_map: MemoryRegion[];
+  heap_timeline: HeapSample[];
 }
 
 export interface AttackTechnique {

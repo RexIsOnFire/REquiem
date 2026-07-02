@@ -121,6 +121,7 @@ Point the proxy at a non-default backend with `NEXT_PUBLIC_API_BASE`.
 | **YARA** | starter behavioral ruleset (extend in `rules/`) |
 | **Intel** | MalwareBazaar / VirusTotal (keys-optional) — metadata only |
 | **Dynamic (simulated)** | process tree, network, filesystem/registry ops, **memory findings** (RWX regions, large heap + AES loops — the ransomware story) |
+| **Memory visualization** | address-space **memory map** (regions by kind, R/W/X, file-backed vs unbacked, suspicious-flagged) + **heap-growth timeline** (committed bytes over execution) — in the web UI, HTML, and PDF |
 | **ATT&CK inference** | maps behavior to techniques, renders a tactic×technique heatmap |
 | **Verdict** | benign / suspicious / malicious + malware classification + explanation |
 

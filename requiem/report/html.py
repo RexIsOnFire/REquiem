@@ -117,6 +117,86 @@ def _process_tree(nodes: list, depth: int = 0) -> str:
     return "".join(out)
 
 
+_KIND_COLOR = {
+    "image": "#3987e5", "mapped": "#199e70", "stack": "#c98500",
+    "private": "#9085e9", "heap": "#3987e5", "shellcode": "#d03b3b",
+}
+
+
+def _human_bytes(n: int) -> str:
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 * 1024:
+        return f"{n // 1024} KB"
+    if n < 1024 ** 3:
+        return f"{n / 1024 / 1024:.0f} MB"
+    return f"{n / 1024 ** 3:.1f} GB"
+
+
+def _memory_map(regions: list) -> str:
+    if not regions:
+        return ""
+    rows = []
+    for r in regions:
+        color = "#d03b3b" if (r.suspicious and r.kind != "shellcode") else \
+            _KIND_COLOR.get(r.kind, "#8b94a7")
+        prot = _e(r.protection)
+        backing = "file-backed" if r.backed else "unbacked"
+        warn = ' <b style="color:#c0392b">⚠</b>' if r.suspicious else ""
+        rows.append(
+            f'<tr><td class="mono">{r.base:#014x}</td>'
+            f'<td class="mono">{_human_bytes(r.size)}</td>'
+            f'<td class="mono">{prot}</td>'
+            f'<td class="small muted">{backing}</td>'
+            f'<td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;'
+            f'background:{color};margin-right:6px"></span>{_e(r.label)}{warn}</td></tr>')
+    return ('<div class="scroll"><table><thead><tr><th>Base</th><th>Size</th>'
+            '<th>Prot</th><th>Backing</th><th>Region</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table></div>')
+
+
+def _heap_timeline_svg(samples: list) -> str:
+    """A compact static SVG area chart for the print/HTML report."""
+    if not samples:
+        return ""
+    W, H = 680, 200
+    pad_l, pad_b, pad_t, pad_r = 56, 28, 24, 14
+    iw, ih = W - pad_l - pad_r, H - pad_t - pad_b
+    t_max = max((s.t_ms for s in samples), default=1) or 1
+    c_max = max((s.committed for s in samples), default=1) or 1
+
+    def x(t):
+        return pad_l + (t / t_max) * iw
+
+    def y(c):
+        return pad_t + ih - (c / c_max) * ih
+
+    pts = [(x(s.t_ms), y(s.committed)) for s in samples]
+    line = " ".join(("M" if i == 0 else "L") + f"{px:.1f} {py:.1f}"
+                    for i, (px, py) in enumerate(pts))
+    area = (f"M{pts[0][0]:.1f} {pad_t+ih} "
+            + " ".join(f"L{px:.1f} {py:.1f}" for px, py in pts)
+            + f" L{pts[-1][0]:.1f} {pad_t+ih} Z")
+    grid = "".join(
+        f'<line x1="{pad_l}" x2="{W-pad_r}" y1="{y(c_max*f):.1f}" y2="{y(c_max*f):.1f}" '
+        f'stroke="#262d3b"/><text x="{pad_l-8}" y="{y(c_max*f)+4:.1f}" text-anchor="end" '
+        f'font-size="10" fill="#8b94a7">{_human_bytes(int(c_max*f))}</text>'
+        for f in (0, 0.25, 0.5, 0.75, 1))
+    markers = "".join(
+        f'<circle cx="{px:.1f}" cy="{py:.1f}" r="3.5" fill="#3987e5" stroke="#3987e5"/>'
+        + (f'<text x="{px:.1f}" y="{py-9:.1f}" text-anchor="middle" font-size="9" '
+           f'fill="#8b94a7">{_e(s.note)}</text>' if s.note else "")
+        + f'<text x="{px:.1f}" y="{H-9}" text-anchor="middle" font-size="10" '
+          f'fill="#8b94a7">{s.t_ms}ms</text>'
+        for (px, py), s in zip(pts, samples))
+    return (f'<svg viewBox="0 0 {W} {H}" width="100%" style="max-width:{W}px">'
+            f'<defs><linearGradient id="hf" x1="0" y1="0" x2="0" y2="1">'
+            f'<stop offset="0%" stop-color="#3987e5" stop-opacity="0.35"/>'
+            f'<stop offset="100%" stop-color="#3987e5" stop-opacity="0.03"/></linearGradient></defs>'
+            f'{grid}<path d="{area}" fill="url(#hf)"/>'
+            f'<path d="{line}" fill="none" stroke="#3987e5" stroke-width="2"/>{markers}</svg>')
+
+
 def render(report: AnalysisReport) -> str:
     ident = report.identity
     vcolor = _VERDICT_COLOR.get(report.verdict, "#6b7280")
@@ -150,6 +230,12 @@ def render(report: AnalysisReport) -> str:
     dyn_badge = ('<span class="sim">SIMULATED</span>' if dyn.simulated
                  else '<span class="real">LIVE SANDBOX</span>') if dyn.executed else ""
     proc = _process_tree(dyn.process_tree) if dyn.process_tree else '<span class="muted">—</span>'
+    mem_map = _memory_map(dyn.memory_map)
+    heap_svg = _heap_timeline_svg(dyn.heap_timeline)
+    mem_section = (f'<h2>Memory Map <span class="muted">&middot; address-space snapshot</span></h2>'
+                   f'{mem_map}') if mem_map else ""
+    heap_section = (f'<h2>Heap Growth <span class="muted">&middot; committed memory over time</span></h2>'
+                    f'<div class="card">{heap_svg}</div>') if heap_svg else ""
 
     return _TEMPLATE.format(
         title=_e(ident.filename),
@@ -177,6 +263,8 @@ def render(report: AnalysisReport) -> str:
         yara=", ".join(_e(y) for y in report.yara_matches) or "—",
         dyn_badge=dyn_badge,
         proc=proc,
+        mem_section=mem_section,
+        heap_section=heap_section,
         import_count=len(report.imports),
         engine=_e(report.engine_version),
         created=_e(report.created_at),
@@ -281,6 +369,9 @@ footer{{margin-top:40px;color:var(--mut);font-size:12px;border-top:1px solid var
 
 <h2>Dynamic Behavior {dyn_badge}</h2>
 <div class="card"><h3>Process Tree</h3>{proc}</div>
+
+{mem_section}
+{heap_section}
 
 <h2>Sections &amp; Entropy</h2>
 <div class="scroll"><table><thead><tr><th>Section</th><th>Entropy</th><th>Raw size</th><th>Flags</th></tr></thead>
