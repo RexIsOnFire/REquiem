@@ -122,6 +122,7 @@ Point the proxy at a non-default backend with `NEXT_PUBLIC_API_BASE`.
 | **Language fingerprinting** | Go, Rust, C#/.NET, C/C++ (MSVC/GCC/MinGW), Delphi, Nim, Python-frozen, AutoIt — with compiler + confidence + evidence |
 | **Packer detection** | UPX, Themida, VMProtect, ASPack, MPRESS, Enigma… + generic entropy heuristic |
 | **Strings / IOCs** | URLs, domains, IPs, registry keys, mutexes, file paths, Bitcoin addresses |
+| **Disassembly (CFG)** | Capstone recursive-descent from the entry point → basic-block **control-flow graph** (x86/x64/ARM/ARM64, PE & ELF); rendered as a graph in the UI and a listing in HTML/PDF |
 | **YARA** | starter behavioral ruleset (extend in `rules/`) |
 | **Intel** | MalwareBazaar / VirusTotal (keys-optional) — metadata only |
 | **Dynamic (simulated)** | process tree, network, filesystem/registry ops, **memory findings** (RWX regions, large heap + AES loops — the ransomware story) |
@@ -134,7 +135,7 @@ Point the proxy at a non-default backend with `NEXT_PUBLIC_API_BASE`.
 ```
 requiem/
 ├── core/        models · triage · pipeline (the orchestrator)
-├── static/      pe · elf · macho · language · packer · strings_ioc · yara_scan
+├── static/      pe · elf · macho · language · packer · strings_ioc · yara_scan · disasm
 ├── intel/       base (interface) · providers (MalwareBazaar, VirusTotal, offline)
 ├── dynamic/     base (interface) · simulated backend · cape (CAPE adapter) + cape_map
 ├── attack/      techniques (catalog) · inference (rules → findings → verdict)
@@ -177,7 +178,7 @@ python -m requiem.cli analyze sample.exe --sandbox cape
 
 ## Roadmap
 
-- CFG generation / disassembly view
+- Function recovery beyond the entry point (symbol/export-seeded CFGs)
 - Family-level YARA signatures
 - Additional sandbox adapters (Cuckoo, Joe, Triage) behind `DynamicBackend`
 

@@ -200,6 +200,58 @@ class DynamicBehavior:
 
 
 @dataclass
+class Instruction:
+    """One disassembled instruction."""
+
+    address: int
+    mnemonic: str
+    op_str: str
+    bytes_hex: str = ""        # raw encoding, e.g. "48 89 e5"
+    comment: str = ""          # resolved call target / string ref, when known
+
+    @property
+    def text(self) -> str:
+        return f"{self.mnemonic} {self.op_str}".strip()
+
+
+@dataclass
+class BasicBlock:
+    """A straight-line run of instructions with one entry and one exit.
+
+    ``successors`` are the addresses of blocks control can flow to; ``kind``
+    describes how the block ends (fallthrough | jump | cond | call | ret).
+    """
+
+    address: int
+    instructions: list[Instruction] = field(default_factory=list)
+    successors: list[int] = field(default_factory=list)
+    kind: str = "fallthrough"
+
+    @property
+    def end(self) -> int:
+        if not self.instructions:
+            return self.address
+        last = self.instructions[-1]
+        return last.address  # start of last instruction (enough for labelling)
+
+
+@dataclass
+class Disassembly:
+    """A recovered control-flow graph rooted at some entry address."""
+
+    available: bool = False
+    arch: str = ""
+    entry: int = 0
+    blocks: list[BasicBlock] = field(default_factory=list)
+    truncated: bool = False    # hit the instruction/block budget
+    note: str = ""             # why unavailable, or extra context
+
+    @property
+    def instruction_count(self) -> int:
+        return sum(len(b.instructions) for b in self.blocks)
+
+
+@dataclass
 class AttackTechnique:
     technique_id: str
     name: str
@@ -227,6 +279,7 @@ class AnalysisReport:
 
     intel: list[IntelResult] = field(default_factory=list)
     dynamic: DynamicBehavior = field(default_factory=DynamicBehavior)
+    disassembly: Disassembly = field(default_factory=Disassembly)
 
     findings: list[Finding] = field(default_factory=list)
     attack: list[AttackTechnique] = field(default_factory=list)

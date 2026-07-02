@@ -115,6 +115,30 @@ export interface DynamicBehavior {
   heap_timeline: HeapSample[];
 }
 
+export interface Instruction {
+  address: number;
+  mnemonic: string;
+  op_str: string;
+  bytes_hex: string;
+  comment: string;
+}
+
+export interface BasicBlock {
+  address: number;
+  instructions: Instruction[];
+  successors: number[];
+  kind: string; // fallthrough | jump | cond | call | ret
+}
+
+export interface Disassembly {
+  available: boolean;
+  arch: string;
+  entry: number;
+  blocks: BasicBlock[];
+  truncated: boolean;
+  note: string;
+}
+
 export interface AttackTechnique {
   technique_id: string;
   name: string;
@@ -137,6 +161,7 @@ export interface AnalysisReport {
   yara_matches: string[];
   intel: IntelResult[];
   dynamic: DynamicBehavior;
+  disassembly: Disassembly;
   findings: Finding[];
   attack: AttackTechnique[];
   verdict: string;

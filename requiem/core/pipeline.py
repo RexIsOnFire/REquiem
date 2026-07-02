@@ -18,7 +18,7 @@ from ..dynamic.base import DynamicBackend
 from ..dynamic.simulated import SimulatedBackend
 from ..intel.base import IntelProvider, gather_intel
 from ..intel.providers import default_providers
-from ..static import elf, language, macho, packer, pe, strings_ioc, yara_scan
+from ..static import disasm, elf, language, macho, packer, pe, strings_ioc, yara_scan
 from .models import AnalysisReport, FileIdentity
 from .triage import triage
 
@@ -29,6 +29,7 @@ class PipelineOptions:
     offline_intel: bool = True
     run_dynamic: bool = True
     run_yara: bool = True
+    run_disasm: bool = True          # CFG disassembly (needs capstone; skips if absent)
     max_strings: int = 60_000
     intel_providers: list[IntelProvider] | None = None
     dynamic_backend: DynamicBackend | None = None   # explicit override wins
@@ -127,6 +128,10 @@ def analyze(data: bytes, filename: str, options: PipelineOptions | None = None) 
     if opts.run_yara:
         yres = yara_scan.scan(data)
         report.yara_matches = yres.matches
+
+    # CFG disassembly (optional; only for native executables).
+    if opts.run_disasm and ident.format in ("pe", "elf", "macho"):
+        report.disassembly = disasm.disassemble(data, ident.format)
 
     # Intel (opt-in).
     if opts.run_intel:

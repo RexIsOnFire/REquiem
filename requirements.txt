@@ -6,6 +6,7 @@
 pefile>=2023.2.7        # accurate PE import/export/rich-header parsing
 lief>=0.14.0            # optional cross-format (PE/ELF/Mach-O) parsing
 yara-python>=4.3.0      # YARA rule scanning
+capstone>=5.0.0         # CFG disassembly of the entry point
 
 # --- HTTP API ---
 fastapi>=0.110.0

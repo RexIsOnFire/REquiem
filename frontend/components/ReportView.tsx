@@ -8,6 +8,7 @@ import { ProcessTree } from "./ProcessTree";
 import { MemoryMap } from "./MemoryMap";
 import { HeapTimeline } from "./HeapTimeline";
 import { SectionsView } from "./SectionsView";
+import { CfgView } from "./CfgView";
 import { IOCPanel } from "./IOCPanel";
 import { PdfButton } from "./PdfButton";
 
@@ -71,6 +72,13 @@ export function ReportView({
 
       <h2 className="sec">Sections &amp; Entropy</h2>
       <SectionsView sections={report.sections} />
+
+      {report.disassembly.available && report.disassembly.blocks.length > 0 && (
+        <>
+          <h2 className="sec">Disassembly <span className="muted" style={{ textTransform: "none", letterSpacing: 0 }}>— entry-point control-flow graph</span></h2>
+          <CfgView dis={report.disassembly} />
+        </>
+      )}
 
       <h2 className="sec">Indicators of Compromise</h2>
       <IOCPanel report={report} />

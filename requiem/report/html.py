@@ -155,6 +155,37 @@ def _memory_map(regions: list) -> str:
             f'<tbody>{"".join(rows)}</tbody></table></div>')
 
 
+_BLOCK_KIND_COLOR = {
+    "ret": "#c96868", "jump": "#3987e5", "cond": "#c98500",
+    "call": "#199e70", "fallthrough": "#8b94a7",
+}
+
+
+def _disassembly(dis) -> str:
+    """Linear listing grouped by basic block, with successor annotations."""
+    if not getattr(dis, "available", False) or not dis.blocks:
+        return ""
+    out = [f'<div class="muted small" style="margin-bottom:8px">arch {_e(dis.arch)} · '
+           f'entry {dis.entry:#x} · {len(dis.blocks)} blocks · '
+           f'{sum(len(b.instructions) for b in dis.blocks)} instructions'
+           + (' · <b>truncated</b>' if dis.truncated else '') + '</div>']
+    for b in dis.blocks:
+        color = _BLOCK_KIND_COLOR.get(b.kind, "#8b94a7")
+        succ = (" → " + ", ".join(f"{s:#x}" for s in b.successors)) if b.successors else ""
+        rows = "".join(
+            f'<div class="disln"><span class="da">{i.address:#010x}</span> '
+            f'<span class="db">{_e(i.bytes_hex)}</span> '
+            f'<span class="dm">{_e(i.mnemonic)}</span> '
+            f'<span class="do">{_e(i.op_str)}</span></div>'
+            for i in b.instructions)
+        out.append(
+            f'<div class="block" style="border-left-color:{color}">'
+            f'<div class="blockhead mono">loc_{b.address:x} '
+            f'<span class="badge" style="border-color:{color};color:{color}">{_e(b.kind)}</span>'
+            f'<span class="muted">{_e(succ)}</span></div>{rows}</div>')
+    return "".join(out)
+
+
 def _heap_timeline_svg(samples: list) -> str:
     """A compact static SVG area chart for the print/HTML report."""
     if not samples:
@@ -236,6 +267,9 @@ def render(report: AnalysisReport) -> str:
                    f'{mem_map}') if mem_map else ""
     heap_section = (f'<h2>Heap Growth <span class="muted">&middot; committed memory over time</span></h2>'
                     f'<div class="card">{heap_svg}</div>') if heap_svg else ""
+    disasm_html = _disassembly(report.disassembly)
+    disasm_section = (f'<h2>Disassembly (CFG) <span class="muted">&middot; entry-point control flow'
+                      f'</span></h2><div class="card">{disasm_html}</div>') if disasm_html else ""
 
     return _TEMPLATE.format(
         title=_e(ident.filename),
@@ -265,6 +299,7 @@ def render(report: AnalysisReport) -> str:
         proc=proc,
         mem_section=mem_section,
         heap_section=heap_section,
+        disasm_section=disasm_section,
         import_count=len(report.imports),
         engine=_e(report.engine_version),
         created=_e(report.created_at),
@@ -315,6 +350,12 @@ table.heat .empty{{background:var(--panel)}} table.heat b{{font-size:11px}}
 .sim{{background:#7c4a03;color:#ffd7a1;font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px}}
 .real{{background:#7f1d1d;color:#fecaca;font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px}}
 .proc{{font-family:monospace;font-size:12.5px;padding:1px 0}}
+.block{{border-left:3px solid #8b94a7;padding:4px 0 4px 10px;margin:8px 0;background:var(--panel2)}}
+.blockhead{{font-size:12px;margin-bottom:3px}}
+.disln{{font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:nowrap;padding:0 4px}}
+.disln:hover{{background:var(--panel)}}
+.da{{color:#6b7f9e;margin-right:10px}} .db{{color:#5b6472;margin-right:10px}}
+.dm{{color:#7c9cff;font-weight:600}} .do{{color:var(--tx)}}
 footer{{margin-top:40px;color:var(--mut);font-size:12px;border-top:1px solid var(--line);padding-top:14px}}
 
 /* --- print / PDF: light, ink-friendly, no cross-page splits --- */
@@ -372,6 +413,7 @@ footer{{margin-top:40px;color:var(--mut);font-size:12px;border-top:1px solid var
 
 {mem_section}
 {heap_section}
+{disasm_section}
 
 <h2>Sections &amp; Entropy</h2>
 <div class="scroll"><table><thead><tr><th>Section</th><th>Entropy</th><th>Raw size</th><th>Flags</th></tr></thead>
