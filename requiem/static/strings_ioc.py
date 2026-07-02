@@ -25,10 +25,37 @@ _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 _REG_RE = re.compile(
     r"(?:HKLM|HKCU|HKEY_[A-Z_]+|SOFTWARE\\|SYSTEM\\CurrentControlSet)[\\A-Za-z0-9_\-.]{3,}", re.I)
 _BTC_RE = re.compile(r"\b(?:bc1[a-z0-9]{20,}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b")
-_PATH_RE = re.compile(r"[A-Za-z]:\\(?:[^\\\/:*?\"<>|\r\n]+\\)*[^\\\/:*?\"<>|\r\n]*")
+# A real Windows path: drive, at least one dir component, and a final component
+# with a file extension — kills junk like "U:\-2" or "w:\g".
+_PATH_RE = re.compile(
+    r"[A-Za-z]:\\(?:[A-Za-z0-9 _.\-]+\\)+[A-Za-z0-9 _.\-]+\.[A-Za-z0-9]{1,8}")
 
 # Substrings that hint at a mutex/named-object creation.
 _MUTEX_HINTS = re.compile(r"(?:Global\\|Local\\|Session\\)[A-Za-z0-9_\-{}]{4,}")
+
+# --- benign-noise denylists ---------------------------------------------
+# Hosts that appear in embedded XML/XMP metadata, manifests, and toolchains —
+# never C2. Matched as a suffix so subdomains are covered.
+_BENIGN_HOST_SUFFIXES = (
+    "w3.org", "adobe.com", "purl.org", "ns.adobe.com", "microsoft.com",
+    "schemas.microsoft.com", "verisign.com", "digicert.com", "sectigo.com",
+    "globalsign.com", "thawte.com", "openxmlformats.org", "xmlsoap.org",
+    "apache.org", "python.org", "golang.org", "rust-lang.org", "gnu.org",
+    "opensource.org", "creativecommons.org", "sonarsource.com",
+)
+# Domains that are really .NET/library namespaces caught by the TLD regex.
+_NAMESPACE_DOMAINS = {
+    "system.io", "system.net", "system.web", "system.data", "system.xml",
+    "system.core", "system.drawing", "system.text", "system.linq",
+    "s.io", "ur.io", "r.io", "e.io",
+}
+
+
+def _benign_host(host: str) -> bool:
+    host = host.lower().strip(".")
+    if host in _NAMESPACE_DOMAINS:
+        return True
+    return any(host == s or host.endswith("." + s) for s in _BENIGN_HOST_SUFFIXES)
 
 
 def extract_strings(data: bytes, limit: int = 100_000) -> list[str]:
@@ -45,12 +72,25 @@ def extract_strings(data: bytes, limit: int = 100_000) -> list[str]:
 
 
 def _valid_ipv4(s: str) -> bool:
+    # Reject leading-zero octets and version-number-looking quads early.
+    octets = s.split(".")
+    if any(len(o) > 1 and o[0] == "0" for o in octets):
+        return False
     try:
-        ip = ipaddress.ip_address(s)
+        ip = ipaddress.IPv4Address(s)
     except ValueError:
         return False
-    # Drop version-number noise like 1.2.3.4 that isn't routable/interesting.
-    return not (ip.is_loopback or ip.is_unspecified or ip.is_multicast)
+    # Drop non-routable / structural noise. Assembly version quads like
+    # 4.0.0.0, 1.0.0.0, 25.12.15.0 read as IPs but almost never are — a final
+    # octet of 0 is a network address, not a host, so we drop those too.
+    if (ip.is_loopback or ip.is_unspecified or ip.is_multicast
+            or ip.is_private or ip.is_reserved or ip.is_link_local):
+        return False
+    if int(ip) & 0xFF == 0:            # x.x.x.0 — network address / version quad
+        return False
+    if str(ip).startswith(("0.", "255.")):
+        return False
+    return True
 
 
 def harvest_iocs(strings: list[str]) -> IOCSet:
@@ -66,12 +106,17 @@ def harvest_iocs(strings: list[str]) -> IOCSet:
     blob = "\n".join(strings)
 
     for m in _URL_RE.finditer(blob):
-        add(iocs.urls, "url", m.group().rstrip(".,);"))
+        url = m.group().rstrip(".,);")
+        host = re.sub(r"^\w+://", "", url).split("/")[0].split(":")[0]
+        if not _benign_host(host):
+            add(iocs.urls, "url", url)
     for m in _IPV4_RE.finditer(blob):
         if _valid_ipv4(m.group()):
             add(iocs.ipv4, "ip", m.group())
     for m in _DOMAIN_RE.finditer(blob):
-        add(iocs.domains, "domain", m.group().lower())
+        domain = m.group().lower()
+        if not _benign_host(domain):
+            add(iocs.domains, "domain", domain)
     for m in _EMAIL_RE.finditer(blob):
         add(iocs.emails, "email", m.group())
     for m in _REG_RE.finditer(blob):
