@@ -24,14 +24,17 @@ from .base import IntelProvider
 _TIMEOUT = 8
 
 
-def _http_post(url: str, data: dict, headers: dict) -> dict | None:
+def _http_post(url: str, data: dict, headers: dict) -> tuple[int, dict | None]:
+    """POST form data; return (http_status, json | None). status 0 == network error."""
     body = urllib.parse.urlencode(data).encode()
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-            return json.loads(resp.read().decode("utf-8", "replace"))
+            return resp.status, json.loads(resp.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        return e.code, None
     except (urllib.error.URLError, TimeoutError, ValueError):
-        return None
+        return 0, None
 
 
 def _http_get(url: str, headers: dict) -> tuple[int, dict | None]:
@@ -64,10 +67,16 @@ class MalwareBazaarProvider(IntelProvider):
         headers = {"User-Agent": "ReQuiem/0.1"}
         if self.api_key:
             headers["Auth-Key"] = self.api_key
-        payload = _http_post(self.ENDPOINT, {"query": "get_info", "hash": sha256}, headers)
+        status, payload = _http_post(self.ENDPOINT,
+                                     {"query": "get_info", "hash": sha256}, headers)
+        if status in (401, 403) or (payload and payload.get("query_status") == "unauthorized"):
+            hint = ("set MALWAREBAZAAR_API_KEY (free at auth.abuse.ch)"
+                    if not self.api_key else "invalid MALWAREBAZAAR_API_KEY")
+            return IntelResult(source=self.name, known=False,
+                               detail=f"auth required — {hint}")
         if payload is None:
             return IntelResult(source=self.name, known=False,
-                               detail="lookup failed (network/timeout)")
+                               detail=f"lookup failed (http {status or 'network'})")
         if payload.get("query_status") != "ok":
             return IntelResult(source=self.name, known=False,
                                detail=f"not found ({payload.get('query_status')})")
