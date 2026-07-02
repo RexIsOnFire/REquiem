@@ -1,0 +1,111 @@
+{
+  "info": {
+    "id": 4211,
+    "category": "file",
+    "score": 9.2,
+    "package": "exe",
+    "machine": {"name": "win10-x64", "label": "win10"}
+  },
+  "target": {
+    "file": {
+      "name": "invoice_8842.exe",
+      "sha256": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44"
+    }
+  },
+  "behavior": {
+    "processtree": [
+      {
+        "pid": 2440,
+        "name": "invoice_8842.exe",
+        "command_line": "\"C:\\Users\\admin\\Desktop\\invoice_8842.exe\"",
+        "children": [
+          {
+            "pid": 2512,
+            "name": "vssadmin.exe",
+            "command_line": "vssadmin.exe delete shadows /all /quiet",
+            "children": []
+          },
+          {
+            "pid": 2600,
+            "name": "cmd.exe",
+            "command_line": "cmd.exe /c bcdedit /set recoveryenabled no",
+            "children": [
+              {
+                "pid": 2644,
+                "name": "bcdedit.exe",
+                "command_line": "bcdedit /set recoveryenabled no",
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "processes": [
+      {
+        "pid": 2440,
+        "process_name": "invoice_8842.exe",
+        "summary": {
+          "write_files": [
+            "C:\\Users\\admin\\Documents\\budget.xlsx.crypted",
+            "C:\\Users\\admin\\Documents\\photo.jpg.crypted",
+            "C:\\Users\\admin\\Desktop\\HOW_TO_RECOVER.txt"
+          ],
+          "write_keys": [
+            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\svc_helper"
+          ]
+        }
+      }
+    ]
+  },
+  "network": {
+    "hosts": [{"ip": "185.220.101.4", "country_name": "NL"}],
+    "dns": [{"request": "pay-decrypt.onion.example", "type": "A"}],
+    "http": [
+      {"method": "POST", "host": "185.220.101.4", "uri": "http://185.220.101.4/gate/checkin"}
+    ]
+  },
+  "procmemory": [
+    {
+      "pid": 2440,
+      "regions": [
+        {"address": "0x00400000", "size": 1310720, "protect": "PAGE_EXECUTE_READ",
+         "path": "C:\\Users\\admin\\Desktop\\invoice_8842.exe"},
+        {"address": "0x00320000", "size": 524288, "protect": "PAGE_EXECUTE_READWRITE",
+         "injected": true},
+        {"address": "0x03000000", "size": 402653184, "protect": "PAGE_READWRITE"},
+        {"address": "0x7ffe0000", "size": 4096, "protect": "PAGE_READONLY",
+         "path": "C:\\Windows\\System32\\ntdll.dll"}
+      ]
+    }
+  ],
+  "signatures": [
+    {
+      "name": "ransomware_files",
+      "description": "Writes a large number of files with a uniform extension (ransomware)",
+      "severity": 3,
+      "ttp": {"T1486": {}},
+      "data": ["renamed 214 files to *.crypted"]
+    },
+    {
+      "name": "inhibit_recovery",
+      "description": "Deletes volume shadow copies to inhibit system recovery",
+      "severity": 3,
+      "ttp": {"T1490": {}},
+      "data": ["vssadmin.exe delete shadows /all /quiet"]
+    },
+    {
+      "name": "persistence_run_key",
+      "description": "Installs a Run key for persistence",
+      "severity": 2,
+      "ttp": {"T1547.001": {}}
+    },
+    {
+      "name": "injection_rwx",
+      "description": "Allocated RWX memory and executed unbacked code (injection/unpacking)",
+      "severity": 3,
+      "ttp": {"T1055": {}},
+      "data": ["PAGE_EXECUTE_READWRITE at 0x00320000"]
+    }
+  ]
+}

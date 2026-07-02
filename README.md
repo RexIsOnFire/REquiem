@@ -49,6 +49,10 @@ python -m requiem.cli analyze sample.exe --html report.html --json report.json
 # print-ready HTML if none is installed)
 python -m requiem.cli analyze sample.exe --pdf report.pdf
 
+# Detonate in a real CAPE sandbox instead of the simulation
+# (needs CAPE_URL; falls back to simulated if CAPE is unreachable)
+CAPE_URL=https://cape.lan python -m requiem.cli analyze sample.exe --sandbox cape
+
 # Online hash-reputation lookup (MalwareBazaar; VirusTotal if VT_API_KEY set)
 python -m requiem.cli analyze sample.exe --intel
 python -m requiem.cli hash <sha256> --online
@@ -132,7 +136,7 @@ requiem/
 ├── core/        models · triage · pipeline (the orchestrator)
 ├── static/      pe · elf · macho · language · packer · strings_ioc · yara_scan
 ├── intel/       base (interface) · providers (MalwareBazaar, VirusTotal, offline)
-├── dynamic/     base (interface) · simulated backend  ← real sandbox plugs in here
+├── dynamic/     base (interface) · simulated backend · cape (CAPE adapter) + cape_map
 ├── attack/      techniques (catalog) · inference (rules → findings → verdict)
 ├── report/      html (self-contained report + heatmap)
 ├── api/         FastAPI app
@@ -148,19 +152,41 @@ The pipeline is a **pure function** (`analyze(bytes, name) -> AnalysisReport`),
 which makes moving it behind a Celery/RQ worker for the production backend a
 mechanical change.
 
+## Real detonation — the CAPE backend
+
+By default the dynamic stage is a clearly-badged **simulation** (ReQuiem never
+executes samples itself). To get real behavior, point ReQuiem at a separately
+operated [CAPE Sandbox](https://github.com/kevoreilly/CAPEv2) — CAPE provides
+the isolated VM, API hooking, memory capture, and network control; ReQuiem
+submits the sample, polls for the report, and maps it into the same
+`DynamicBehavior` model the rest of the app consumes.
+
+```bash
+export CAPE_URL=https://cape.lan     # your CAPE web/API base
+export CAPE_TOKEN=...                # optional API token
+python -m requiem.cli analyze sample.exe --sandbox cape
+```
+
+- **Nothing detonates locally.** ReQuiem only talks to the CAPE URL you supply.
+- **Never hard-fails.** If CAPE is unconfigured, unreachable, or times out, the
+  run transparently falls back to the simulated backend (the report shows the
+  fallback reason).
+- The CAPE-report→model mapping lives in `dynamic/cape_map.py` as a pure,
+  fully-tested function; adding another sandbox (Cuckoo/Joe/Triage) is a new
+  `DynamicBackend` + mapper, nothing else.
+
 ## Roadmap
 
-- Real sandbox backend (CAPE integration behind `DynamicBackend`)
-- PDF export of reports
 - CFG generation / disassembly view
 - Family-level YARA signatures
-- Memory-region visualization in the UI (heap growth / RWX map)
+- Additional sandbox adapters (Cuckoo, Joe, Triage) behind `DynamicBackend`
 
 ## Safety & scope
 
 ReQuiem is for **authorized** malware analysis, CTFs, research, and education.
-It never distributes sample binaries and never executes samples itself in its
-default configuration.
+It never distributes sample binaries and never executes samples itself — the
+optional live-detonation path delegates entirely to a CAPE instance you operate
+and point it at.
 
 ## License
 

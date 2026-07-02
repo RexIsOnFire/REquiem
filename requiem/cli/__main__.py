@@ -84,7 +84,9 @@ def _print_console(report) -> None:
               "  ".join(f"{n}:{c}" for n, c in ioc_counts))
     if report.dynamic.executed:
         badge = "simulated" if report.dynamic.simulated else "live"
-        print(f"\n  Dynamic: {badge} · {len(report.dynamic.memory)} memory findings")
+        print(f"\n  Dynamic: {badge} [{report.dynamic.backend}] · "
+              f"{len(report.dynamic.memory)} memory findings · "
+              f"{len(report.dynamic.memory_map)} regions")
     print("═" * 68 + "\n")
 
 
@@ -114,6 +116,7 @@ def _cmd_analyze(args) -> int:
         offline_intel=not args.intel,
         run_dynamic=not args.no_dynamic,
         run_yara=not args.no_yara,
+        sandbox=args.sandbox,
     )
     import os
     report = analyze(data, os.path.basename(args.file), opts)
@@ -166,7 +169,10 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--pdf", metavar="PATH", help="write PDF report (needs weasyprint or playwright)")
     a.add_argument("--json", metavar="PATH", help="write JSON report")
     a.add_argument("--intel", action="store_true", help="perform online hash-reputation lookup")
-    a.add_argument("--no-dynamic", action="store_true", help="skip (simulated) dynamic stage")
+    a.add_argument("--sandbox", choices=["simulated", "cape"], default="simulated",
+                   help="dynamic backend: 'simulated' (default) or 'cape' (needs CAPE_URL). "
+                        "CAPE falls back to simulated if unreachable.")
+    a.add_argument("--no-dynamic", action="store_true", help="skip the dynamic stage")
     a.add_argument("--no-yara", action="store_true", help="skip YARA scanning")
     a.add_argument("--quiet", action="store_true", help="suppress console report")
     a.set_defaults(func=_cmd_analyze)
@@ -178,7 +184,20 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _force_utf8_stdio() -> None:
+    """Avoid UnicodeEncodeError when console output (box chars, ·, ⚠) is written
+    to a non-UTF-8 stream — notably a redirected file under Windows cp1252."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv=None) -> int:
+    _force_utf8_stdio()
     args = build_parser().parse_args(argv)
     return args.func(args)
 

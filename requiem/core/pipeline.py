@@ -31,8 +31,22 @@ class PipelineOptions:
     run_yara: bool = True
     max_strings: int = 60_000
     intel_providers: list[IntelProvider] | None = None
-    dynamic_backend: DynamicBackend | None = None
+    dynamic_backend: DynamicBackend | None = None   # explicit override wins
+    sandbox: str = "simulated"       # "simulated" | "cape"
     interesting_string_limit: int = 400
+
+
+def _resolve_backend(opts: "PipelineOptions") -> DynamicBackend:
+    """Pick the dynamic backend. An explicit ``dynamic_backend`` always wins;
+    otherwise ``sandbox`` selects one. A configured-but-unreachable CAPE falls
+    back to the simulated backend so a run never hard-fails on sandbox trouble.
+    """
+    if opts.dynamic_backend is not None:
+        return opts.dynamic_backend
+    if opts.sandbox == "cape":
+        from ..dynamic.cape import CapeBackend
+        return CapeBackend()
+    return SimulatedBackend()
 
 
 # Strings we surface to the analyst / feed to inference (behaviorally loaded).
@@ -125,7 +139,7 @@ def analyze(data: bytes, filename: str, options: PipelineOptions | None = None) 
 
     # Dynamic detonation (simulated by default) with static hints.
     if opts.run_dynamic:
-        backend = opts.dynamic_backend or SimulatedBackend()
+        backend = _resolve_backend(opts)
         hints = {
             "imports": report.imports,
             "strings": report.strings_of_interest,
@@ -135,7 +149,16 @@ def analyze(data: bytes, filename: str, options: PipelineOptions | None = None) 
             "classification": report.classification,
             "packed": bool(report.packers),
         }
-        report.dynamic = backend.detonate(data=data, identity=ident, static_hints=hints)
+        try:
+            report.dynamic = backend.detonate(data=data, identity=ident, static_hints=hints)
+        except Exception as exc:
+            # A real sandbox may be unreachable/timed-out — degrade to the
+            # simulated backend rather than failing the whole investigation.
+            if isinstance(backend, SimulatedBackend):
+                raise
+            report.dynamic = SimulatedBackend().detonate(
+                data=data, identity=ident, static_hints=hints)
+            report.dynamic.backend = f"simulated (fallback from {backend.name}: {exc})"
 
         # Re-run inference now that dynamic/memory findings exist. Reset the
         # derived fields first so we don't double-count the static pass.
