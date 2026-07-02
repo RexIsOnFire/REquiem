@@ -7,6 +7,11 @@ venv/
 build/
 dist/
 
+# Secrets — never commit the real .env (keep .env.example)
+.env
+.env.local
+!.env.example
+
 # Never commit samples or generated reports
 samples/*
 !samples/.gitkeep

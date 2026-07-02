@@ -36,6 +36,30 @@ pip install -e .            # core only, stdlib
 pip install -e ".[all]"    # + pefile/yara/fastapi for full fidelity
 ```
 
+## Configure API keys (optional)
+
+Copy the template and fill in whatever you have — every key is optional:
+
+```bash
+cp .env.example .env       # Windows: copy .env.example .env
+```
+
+```ini
+VT_API_KEY=...             # VirusTotal
+MALWAREBAZAAR_API_KEY=...  # MalwareBazaar (works without a key too)
+CAPE_URL=https://cape.lan  # CAPE sandbox (real detonation)
+CAPE_TOKEN=...
+```
+
+ReQuiem loads `.env` automatically at startup — CLI, API, and library. An
+explicit environment variable always overrides the file. `.env` is gitignored;
+`.env.example` is the committed template. Check what's wired up:
+
+```bash
+python -m requiem.cli config      # lists which keys are set
+# or, with the API running:  GET /config
+```
+
 ## Use it — CLI
 
 ```bash

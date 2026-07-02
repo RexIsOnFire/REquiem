@@ -6,6 +6,11 @@ Public entry point::
     report = analyze(open("sample.exe", "rb").read(), "sample.exe")
     print(report.summary)
 """
+# Load a .env (VT/MalwareBazaar/CAPE keys) before anything reads os.environ.
+from .core.config import ensure_loaded as _ensure_loaded
+
+_ensure_loaded()
+
 from .core.pipeline import PipelineOptions, analyze
 from .core.models import AnalysisReport
 

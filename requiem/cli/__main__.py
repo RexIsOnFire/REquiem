@@ -149,6 +149,16 @@ def _cmd_analyze(args) -> int:
     return 0
 
 
+def _cmd_config(args) -> int:
+    from ..core import config
+    dotenv = config.find_dotenv()
+    print(f"  .env: {dotenv or 'not found'}")
+    for key, present in config.configured_status().items():
+        mark = _c("1;32", "set") if present else _c("1;30", "unset")
+        print(f"    {key:<24} {mark}")
+    return 0
+
+
 def _cmd_hash(args) -> int:
     providers = default_providers(offline=not args.online)
     results = gather_intel(providers, sha256=args.hash, md5=None, sha1=None)
@@ -181,6 +191,9 @@ def build_parser() -> argparse.ArgumentParser:
     h.add_argument("hash")
     h.add_argument("--online", action="store_true", help="query live intel providers")
     h.set_defaults(func=_cmd_hash)
+
+    c = sub.add_parser("config", help="show which API keys / integrations are configured")
+    c.set_defaults(func=_cmd_config)
     return p
 
 

@@ -45,6 +45,18 @@ def healthz():
     return {"status": "ok", "engine": "0.1.0"}
 
 
+@app.get("/config")
+def config_status():
+    """Which integrations are configured (key values never exposed)."""
+    from ..core import config
+    status = config.configured_status()
+    return {
+        "configured": status,
+        "intel_ready": status["VT_API_KEY"] or status["MALWAREBAZAAR_API_KEY"],
+        "sandbox_ready": status["CAPE_URL"],
+    }
+
+
 @app.get("/attack/matrix")
 def attack_matrix():
     """Full catalog so the frontend can draw an empty heatmap and overlay results."""
