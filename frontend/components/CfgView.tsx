@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { BasicBlock, Disassembly, FunctionCfg } from "@/lib/types";
 
 // Block-terminator kind -> accent color (matches the HTML report).
@@ -222,7 +222,12 @@ export function CfgView({ dis }: { dis: Disassembly }) {
 
 // Graph view: blocks stacked in a column with an SVG gutter drawing arcs
 // between predecessor/successor rows. Forward edges arc down the right of the
-// gutter; back-edges (loops) arc down the left and are dashed.
+// gutter; back-edges (loops) arc down the left and are dashed. Block heights
+// vary with instruction count, so we MEASURE each block's real position (via
+// a ResizeObserver) and draw edges to actual centers — nothing overflows into
+// the section below, and the whole panel scrolls internally when tall.
+const GAP = 10;
+
 function CfgGraph({ blocks }: { blocks: BasicBlock[] }) {
   const edges = useMemo(() => {
     const index = new Map<number, number>();
@@ -237,33 +242,63 @@ function CfgGraph({ blocks }: { blocks: BasicBlock[] }) {
     return es;
   }, [blocks]);
 
-  const ROW = 118;
-  const GUTTER = 48;
-  const height = Math.max(blocks.length * ROW, 40);
-  const y = (i: number) => i * ROW + 24;
+  const colRef = useRef<HTMLDivElement>(null);
+  // centers[i] = vertical center of block i within the column; total = column height.
+  const [centers, setCenters] = useState<number[]>([]);
+  const [total, setTotal] = useState(0);
+
+  useEffect(() => {
+    const col = colRef.current;
+    if (!col) return;
+    const measure = () => {
+      const kids = Array.from(col.children) as HTMLElement[];
+      setCenters(kids.map((k) => k.offsetTop + k.offsetHeight / 2));
+      setTotal(col.scrollHeight);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(col);
+    Array.from(col.children).forEach((k) => ro.observe(k as HTMLElement));
+    return () => ro.disconnect();
+  }, [blocks]);
+
+  const GUTTER = 46;
 
   return (
-    <div style={{ display: "flex", gap: 8 }}>
-      <svg width={GUTTER} height={height} style={{ flex: "none", overflow: "visible" }}>
-        {edges.map((e, i) => {
-          const y1 = y(e.from);
-          const y2 = y(e.to);
-          const color = e.back ? "#c98500" : "#4a5568";
-          const x = e.back ? 8 : GUTTER - 8;
-          const bow = e.back ? -22 : 22;
-          const d = `M ${GUTTER - 6} ${y1} C ${x + bow} ${y1}, ${x + bow} ${y2}, ${GUTTER - 6} ${y2}`;
-          return (
-            <path
-              key={i}
-              d={d}
-              fill="none"
-              stroke={color}
-              strokeWidth="1.5"
-              strokeDasharray={e.back ? "4 3" : undefined}
-              markerEnd="url(#arrow)"
-            />
-          );
-        })}
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        maxHeight: 640,
+        overflowY: "auto",
+        overflowX: "hidden",
+        border: "1px solid var(--line)",
+        borderRadius: 10,
+        padding: 8,
+      }}
+    >
+      <svg width={GUTTER} height={total} style={{ flex: "none", overflow: "visible" }}>
+        {centers.length === blocks.length &&
+          edges.map((e, i) => {
+            const y1 = centers[e.from];
+            const y2 = centers[e.to];
+            if (y1 == null || y2 == null) return null;
+            const color = e.back ? "#c98500" : "#4a5568";
+            const x = e.back ? 8 : GUTTER - 8;
+            const bow = e.back ? -20 : 20;
+            const d = `M ${GUTTER - 6} ${y1} C ${x + bow} ${y1}, ${x + bow} ${y2}, ${GUTTER - 6} ${y2}`;
+            return (
+              <path
+                key={i}
+                d={d}
+                fill="none"
+                stroke={color}
+                strokeWidth="1.5"
+                strokeDasharray={e.back ? "4 3" : undefined}
+                markerEnd="url(#arrow)"
+              />
+            );
+          })}
         <defs>
           <marker id="arrow" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
             <path d="M0 0 L6 3 L0 6 Z" fill="#4a5568" />
@@ -271,11 +306,12 @@ function CfgGraph({ blocks }: { blocks: BasicBlock[] }) {
         </defs>
       </svg>
 
-      <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+      <div
+        ref={colRef}
+        style={{ display: "flex", flexDirection: "column", gap: GAP, flex: 1, minWidth: 0 }}
+      >
         {blocks.map((b) => (
-          <div key={b.address} style={{ height: ROW, paddingBottom: 8 }}>
-            <Block block={b} />
-          </div>
+          <Block key={b.address} block={b} />
         ))}
       </div>
     </div>

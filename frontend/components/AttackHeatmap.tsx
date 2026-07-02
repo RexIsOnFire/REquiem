@@ -89,13 +89,15 @@ export function AttackHeatmap({ attack }: { attack: AttackTechnique[] }) {
                       style={{
                         background: confidenceShade(at.confidence.name),
                         borderRadius: 6,
-                        border: `1px solid ${active ? "#fff" : "transparent"}`,
+                        // Ring + brightness signals hover WITHOUT scaling, so the
+                        // cell never overflows/clips against the scroll edges.
+                        boxShadow: active ? "0 0 0 2px #fff inset" : "none",
+                        filter: active ? "brightness(1.25)" : "none",
                         padding: "8px 8px",
                         color: "#fff",
                         cursor: "pointer",
                         minWidth: 128,
-                        transition: "transform 0.1s",
-                        transform: active ? "scale(1.04)" : "none",
+                        transition: "filter 0.1s, box-shadow 0.1s",
                       }}
                     >
                       <b style={{ fontSize: 11 }}>{at.technique_id}</b>

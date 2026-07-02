@@ -8,6 +8,7 @@ import { ProcessTree } from "./ProcessTree";
 import { MemoryMap } from "./MemoryMap";
 import { HeapTimeline } from "./HeapTimeline";
 import { SectionsView } from "./SectionsView";
+import { ImportsStrings } from "./ImportsStrings";
 import { CfgView } from "./CfgView";
 import { IOCPanel } from "./IOCPanel";
 import { PdfButton } from "./PdfButton";
@@ -69,6 +70,11 @@ export function ReportView({
           <HeapTimeline samples={report.dynamic.heap_timeline} />
         </>
       )}
+
+      <h2 className="sec">
+        Imports &amp; Strings <span className="muted" style={{ textTransform: "none", letterSpacing: 0 }}>— capability surface</span>
+      </h2>
+      <ImportsStrings report={report} />
 
       <h2 className="sec">Sections &amp; Entropy</h2>
       <SectionsView sections={report.sections} />
