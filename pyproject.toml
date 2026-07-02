@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "requiem-workbench"
+version = "0.1.0"
+description = "ReQuiem — an all-in-one malware analysis workbench (static, memory, ATT&CK)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "ReQuiem" }]
+keywords = ["malware", "reverse-engineering", "static-analysis", "mitre-attack", "yara"]
+dependencies = []  # core is stdlib-only
+
+[project.optional-dependencies]
+static = ["pefile>=2023.2.7", "lief>=0.14.0", "yara-python>=4.3.0"]
+api = ["fastapi>=0.110.0", "uvicorn[standard]>=0.29.0", "python-multipart>=0.0.9"]
+dev = ["pytest>=8.0.0"]
+all = ["pefile>=2023.2.7", "lief>=0.14.0", "yara-python>=4.3.0",
+       "fastapi>=0.110.0", "uvicorn[standard]>=0.29.0", "python-multipart>=0.0.9",
+       "pytest>=8.0.0"]
+
+[project.scripts]
+requiem = "requiem.cli.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["requiem*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

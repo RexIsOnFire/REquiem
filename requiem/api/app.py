@@ -1,0 +1,83 @@
+"""FastAPI surface for ReQuiem.
+
+Thin HTTP layer over the pipeline so a React/Next.js frontend (or curl) can:
+
+    POST /analyze      multipart file upload  -> full JSON report
+    POST /analyze/html multipart file upload  -> rendered HTML report
+    GET  /hash/{hash}                          -> metadata-only intel lookup
+    GET  /attack/matrix                        -> tactic/technique catalog for the heatmap
+    GET  /healthz
+
+The heavy analysis is synchronous here for simplicity; in production this hands
+off to a Celery/RQ worker (the pipeline is already a pure function, so that move
+is mechanical). Requires ``fastapi`` + an ASGI server; both are optional deps.
+"""
+from __future__ import annotations
+
+from ..attack import techniques
+from ..core.pipeline import PipelineOptions, analyze
+from ..intel.base import gather_intel
+from ..intel.providers import default_providers
+from ..report import html
+
+try:
+    from fastapi import FastAPI, File, UploadFile, Query
+    from fastapi.responses import HTMLResponse, JSONResponse
+except Exception as exc:  # pragma: no cover
+    raise SystemExit("FastAPI not installed. `pip install fastapi uvicorn` to use the API.") from exc
+
+app = FastAPI(title="ReQuiem", version="0.1.0",
+              description="All-in-one malware analysis workbench")
+
+# Cap upload size to keep a demo instance safe (100 MB).
+_MAX_BYTES = 100 * 1024 * 1024
+
+
+def _options(intel: bool) -> PipelineOptions:
+    return PipelineOptions(run_intel=intel, offline_intel=not intel)
+
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok", "engine": "0.1.0"}
+
+
+@app.get("/attack/matrix")
+def attack_matrix():
+    """Full catalog so the frontend can draw an empty heatmap and overlay results."""
+    return {
+        "tactics": techniques.TACTIC_ORDER,
+        "techniques": [
+            {"id": tid, "name": name, "tactic": tactic}
+            for tid, (name, tactic) in techniques.CATALOG.items()
+        ],
+    }
+
+
+@app.get("/hash/{value}")
+def hash_lookup(value: str, online: bool = Query(False)):
+    providers = default_providers(offline=not online)
+    results = gather_intel(providers, sha256=value, md5=None, sha1=None)
+    return {
+        "hash": value,
+        "note": "Metadata lookup only — ReQuiem never downloads sample binaries.",
+        "results": [r.__dict__ for r in results],
+    }
+
+
+@app.post("/analyze")
+async def analyze_upload(file: UploadFile = File(...), intel: bool = Query(False)):
+    data = await file.read()
+    if len(data) > _MAX_BYTES:
+        return JSONResponse(status_code=413, content={"error": "file too large"})
+    report = analyze(data, file.filename or "upload.bin", _options(intel))
+    return report.to_dict()
+
+
+@app.post("/analyze/html", response_class=HTMLResponse)
+async def analyze_upload_html(file: UploadFile = File(...), intel: bool = Query(False)):
+    data = await file.read()
+    if len(data) > _MAX_BYTES:
+        return HTMLResponse(status_code=413, content="<h1>File too large</h1>")
+    report = analyze(data, file.filename or "upload.bin", _options(intel))
+    return HTMLResponse(html.render(report))

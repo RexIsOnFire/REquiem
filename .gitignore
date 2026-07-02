@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+
+# Never commit samples or generated reports
+samples/*
+!samples/.gitkeep
+*.exe
+*.dll
+*.bin
+report*.html
+report*.json
+*.local

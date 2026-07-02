@@ -1,0 +1,16 @@
+# ReQuiem has ZERO hard runtime dependencies — the core pipeline runs on the
+# Python standard library alone. Everything below is OPTIONAL and enhances a
+# specific stage; the code degrades gracefully when a package is absent.
+
+# --- static analysis fidelity ---
+pefile>=2023.2.7        # accurate PE import/export/rich-header parsing
+lief>=0.14.0            # optional cross-format (PE/ELF/Mach-O) parsing
+yara-python>=4.3.0      # YARA rule scanning
+
+# --- HTTP API ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9 # required by FastAPI for file uploads
+
+# --- dev / test ---
+pytest>=8.0.0

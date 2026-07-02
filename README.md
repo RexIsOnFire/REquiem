@@ -1,0 +1,124 @@
+# ReQuiem — Malware Analysis Workbench
+
+> One upload · one investigation · one report · one ATT&CK view · one IOC export.
+
+ReQuiem is an all-in-one reverse-engineering workbench. Give it a file (or a
+hash), and it produces an **explainable** technical report: what language the
+sample was built in, how it's packed, what it does, which MITRE ATT&CK
+techniques it maps to, and *why* — with the evidence attached to every claim.
+
+It doesn't just say "this is ransomware." It says:
+
+> *Classified as **ransomware** because the sample carries ransom-note
+> phrasing plus a Bitcoin address, deletes volume shadow copies, imports
+> cryptographic routines, and exhibits a read→encrypt→write loop over user
+> directories.* — then shows you each piece of evidence.
+
+## Why it's built the way it is
+
+- **Zero hard dependencies.** The entire core pipeline runs on the Python
+  standard library. Optional packages (`pefile`, `yara-python`, `fastapi`)
+  each sharpen one stage and degrade gracefully when absent — so it runs
+  anywhere, immediately.
+- **Explainability is a data type.** Every conclusion is a `Finding` carrying
+  `Evidence`. Nothing is asserted without a locator you can jump to.
+- **Safe by design.** ReQuiem performs *metadata-only* hash lookups and
+  **never auto-downloads malware binaries**. Dynamic analysis runs through a
+  pluggable backend that ships as a clearly-badged **simulation**; a real
+  sandbox (CAPE/Cuckoo/VM-agent) implements the same interface and drops in
+  without touching the rest of the code.
+
+## Install
+
+```bash
+git clone <repo> && cd ReQuiem
+pip install -e .            # core only, stdlib
+pip install -e ".[all]"    # + pefile/yara/fastapi for full fidelity
+```
+
+## Use it — CLI
+
+```bash
+# Analyze a local sample -> console report
+python -m requiem.cli analyze sample.exe
+
+# ...and write a self-contained HTML report + machine-readable JSON
+python -m requiem.cli analyze sample.exe --html report.html --json report.json
+
+# Online hash-reputation lookup (MalwareBazaar; VirusTotal if VT_API_KEY set)
+python -m requiem.cli analyze sample.exe --intel
+python -m requiem.cli hash <sha256> --online
+```
+
+## Use it — library
+
+```python
+from requiem import analyze
+report = analyze(open("sample.exe", "rb").read(), "sample.exe")
+print(report.verdict, report.classification)   # e.g. malicious ransomware
+print(report.summary)                          # the plain-English explanation
+```
+
+## Use it — API (for the React/Next.js frontend)
+
+```bash
+uvicorn requiem.api.app:app --reload
+```
+
+| Method | Route              | Purpose                                   |
+|--------|--------------------|-------------------------------------------|
+| POST   | `/analyze`         | multipart upload → full JSON report       |
+| POST   | `/analyze/html`    | multipart upload → rendered HTML report   |
+| GET    | `/hash/{hash}`     | metadata-only intel lookup                |
+| GET    | `/attack/matrix`   | ATT&CK catalog for drawing the heatmap    |
+| GET    | `/healthz`         | liveness                                  |
+
+## What it detects
+
+| Stage | Output |
+|-------|--------|
+| **Triage** | format (PE/ELF/Mach-O/Office/script), arch, bitness, hashes, entropy |
+| **Language fingerprinting** | Go, Rust, C#/.NET, C/C++ (MSVC/GCC/MinGW), Delphi, Nim, Python-frozen, AutoIt — with compiler + confidence + evidence |
+| **Packer detection** | UPX, Themida, VMProtect, ASPack, MPRESS, Enigma… + generic entropy heuristic |
+| **Strings / IOCs** | URLs, domains, IPs, registry keys, mutexes, file paths, Bitcoin addresses |
+| **YARA** | starter behavioral ruleset (extend in `rules/`) |
+| **Intel** | MalwareBazaar / VirusTotal (keys-optional) — metadata only |
+| **Dynamic (simulated)** | process tree, network, filesystem/registry ops, **memory findings** (RWX regions, large heap + AES loops — the ransomware story) |
+| **ATT&CK inference** | maps behavior to techniques, renders a tactic×technique heatmap |
+| **Verdict** | benign / suspicious / malicious + malware classification + explanation |
+
+## Architecture
+
+```
+requiem/
+├── core/        models · triage · pipeline (the orchestrator)
+├── static/      pe · elf · macho · language · packer · strings_ioc · yara_scan
+├── intel/       base (interface) · providers (MalwareBazaar, VirusTotal, offline)
+├── dynamic/     base (interface) · simulated backend  ← real sandbox plugs in here
+├── attack/      techniques (catalog) · inference (rules → findings → verdict)
+├── report/      html (self-contained report + heatmap)
+├── api/         FastAPI app
+└── cli/         command-line entry point
+```
+
+The pipeline is a **pure function** (`analyze(bytes, name) -> AnalysisReport`),
+which makes moving it behind a Celery/RQ worker for the production backend a
+mechanical change.
+
+## Roadmap
+
+- Real sandbox backend (CAPE integration behind `DynamicBackend`)
+- PDF export of reports
+- CFG generation / disassembly view
+- Next.js frontend (process-tree graph, interactive ATT&CK heatmap, memory viz)
+- Family-level YARA signatures
+
+## Safety & scope
+
+ReQuiem is for **authorized** malware analysis, CTFs, research, and education.
+It never distributes sample binaries and never executes samples itself in its
+default configuration.
+
+## License
+
+MIT
