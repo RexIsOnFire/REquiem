@@ -25,20 +25,6 @@ def _headers(key: str) -> dict[str, str]:
     return {"api-key": key, "User-Agent": "Falcon Sandbox", "accept": "application/json"}
 
 
-def _post(url: str, key: str, form: dict) -> tuple[int, object]:
-    body = urllib.parse.urlencode(form).encode()
-    h = _headers(key)
-    h["Content-Type"] = "application/x-www-form-urlencoded"
-    req = urllib.request.Request(url, data=body, headers=h, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-            return resp.status, json.loads(resp.read().decode("utf-8", "replace"))
-    except urllib.error.HTTPError as e:
-        return e.code, None
-    except (urllib.error.URLError, TimeoutError, ValueError):
-        return 0, None
-
-
 def _get(url: str, key: str) -> tuple[int, object]:
     req = urllib.request.Request(url, headers=_headers(key))
     try:
@@ -95,6 +81,19 @@ def to_normalized(summary: dict) -> N.NormalizedReport:
             marks=[],
         ))
 
+    # HA also exposes a dedicated mitre_attcks[] with technique ids + tactics.
+    for t in summary.get("mitre_attcks") or []:
+        tid = t.get("technique_id") or t.get("attck_id") or ""
+        if not tid:
+            continue
+        sigs.append(N.NormSignature(
+            name=t.get("technique") or tid,
+            description=t.get("technique") or f"MITRE {tid}",
+            severity=("high" if (t.get("malicious_identifiers_count") or 0) else "medium"),
+            attack=[tid],
+            marks=[],
+        ))
+
     return N.NormalizedReport(processes=roots, network=network, signatures=sigs)
 
 
@@ -108,19 +107,24 @@ class HybridAnalysisProvider(CloudBehaviorProvider):
         if not self.api_key:
             return CloudLookup(source=self.name, found=False,
                                note="no HYBRIDANALYSIS_API_KEY")
-        status, results = _post(_BASE + "/search/hash", self.api_key, {"hash": sha256})
+        # 1) Overview by hash — the reliable GET endpoint. It lists per-
+        #    environment behavioral report ids in `reports`.
+        status, overview = _get(_BASE + f"/overview/{sha256}", self.api_key)
         if status in (401, 403):
             return CloudLookup(source=self.name, found=False, note="auth failed")
-        if not isinstance(results, list) or not results:
+        if status == 404 or not isinstance(overview, dict):
             return CloudLookup(source=self.name, found=False, note="hash not found on HA")
-        job_id = results[0].get("job_id") or results[0].get("sha256")
-        if not job_id:
-            return CloudLookup(source=self.name, found=False, note="no report id")
-        st, summary = _get(_BASE + f"/report/{job_id}/summary", self.api_key)
-        if st != 200 or not isinstance(summary, dict):
+        report_ids = overview.get("reports") or []
+        if not report_ids:
             return CloudLookup(source=self.name, found=False,
-                               note=f"summary fetch failed (http {st})")
-        beh = N.to_behavior(to_normalized(summary), backend_name=f"{self.name} (cloud)")
-        if not (beh.process_tree or beh.network or beh.memory):
-            return CloudLookup(source=self.name, found=False, note="empty report")
-        return CloudLookup(source=self.name, found=True, behavior=beh)
+                               note="no behavioral report for this hash")
+        # 2) Fetch report summaries until one carries behavior (newest first).
+        for rid in report_ids[:4]:
+            st, summary = _get(_BASE + f"/report/{rid}/summary", self.api_key)
+            if st != 200 or not isinstance(summary, dict):
+                continue
+            beh = N.to_behavior(to_normalized(summary), backend_name=f"{self.name} (cloud)")
+            if beh.process_tree or beh.network or beh.memory:
+                return CloudLookup(source=self.name, found=True, behavior=beh)
+        return CloudLookup(source=self.name, found=False,
+                           note="reports had no behavioral detail")

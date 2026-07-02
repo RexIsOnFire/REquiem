@@ -62,7 +62,8 @@ def test_hybrid_mapping_builds_tree_and_sigs():
     assert any(f.attack_techniques == ["T1486"] for f in b.memory)
 
 
-def test_hybrid_without_key_is_graceful():
+def test_hybrid_without_key_is_graceful(monkeypatch):
+    monkeypatch.delenv("HYBRIDANALYSIS_API_KEY", raising=False)
     lk = hybrid.HybridAnalysisProvider(api_key="").lookup(sha256="a" * 64)
     assert lk.found is False
     assert "HYBRIDANALYSIS_API_KEY" in lk.note
