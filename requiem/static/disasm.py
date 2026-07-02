@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import struct
 
-from ..core.models import BasicBlock, Disassembly, Instruction
+from ..core.models import BasicBlock, Disassembly, Function, Instruction
 
 try:
     import capstone as _cs
@@ -27,6 +27,8 @@ except Exception:  # pragma: no cover
     _HAVE_CAPSTONE = False
 
 # Safety budgets — a packed or adversarial binary must never hang analysis.
+_MAX_FUNCS = 64
+_MAX_TOTAL_INSNS = 24000
 _MAX_INSNS = 4000
 _MAX_BLOCKS = 400
 _MAX_BLOCK_INSNS = 512
@@ -172,7 +174,20 @@ def _direct_target(insn) -> int | None:
     return None
 
 
-def disassemble(data: bytes, fmt: str) -> Disassembly:
+def _is_call(insn) -> bool:
+    return _cs.CS_GRP_CALL in set(insn.groups)
+
+
+def disassemble(data: bytes, fmt: str,
+                seeds: list[tuple[str, int, str]] | None = None) -> Disassembly:
+    """Recover functions as basic-block CFGs.
+
+    ``seeds`` are ``(name, virtual_address, source)`` triples from the
+    symbol/export tables (``source`` is "export" or "symbol"). The entry point
+    is always recovered first; named seeds next; then functions discovered via
+    direct ``call`` instructions (named ``sub_<addr>``, source "call") — all
+    bounded by :data:`_MAX_FUNCS` and :data:`_MAX_TOTAL_INSNS`.
+    """
     if not _HAVE_CAPSTONE:
         return Disassembly(available=False, note="capstone not installed; skipped")
     view = _codeview(data, fmt)
@@ -180,29 +195,95 @@ def disassemble(data: bytes, fmt: str) -> Disassembly:
         return Disassembly(available=False,
                            note=f"no disassemblable code view for format '{fmt}'")
     try:
-        return _recursive_descent(view)
+        return _recover_functions(view, seeds or [])
     except Exception as exc:  # pragma: no cover - defensive
         return Disassembly(available=False, arch=view.arch, entry=view.entry,
                            note=f"disassembly error: {exc}")
 
 
-def _recursive_descent(view: _CodeView) -> Disassembly:
+def _recover_functions(view: _CodeView, seeds: list[tuple[str, int, str]]) -> Disassembly:
     md = _make_cs(view.arch)
-    blocks: dict[int, BasicBlock] = {}
-    worklist = [view.entry]
-    seen: set[int] = set()
+
+    # Ordered, de-duplicated seed queue: entry, then named seeds inside the view.
+    queued: dict[int, tuple[str, str]] = {}  # addr -> (name, source)
+    order: list[int] = []
+
+    def enqueue(addr: int, name: str, source: str) -> None:
+        if addr in queued or view.offset_of(addr) is None:
+            return
+        queued[addr] = (name, source)
+        order.append(addr)
+
+    enqueue(view.entry, "entry", "entry")
+    for name, addr, source in seeds:
+        enqueue(addr, name, source)
+
+    functions: list[Function] = []
     total_insns = 0
+    truncated = False
+    i = 0
+    while i < len(order):
+        if len(functions) >= _MAX_FUNCS or total_insns >= _MAX_TOTAL_INSNS:
+            truncated = True
+            break
+        addr = order[i]
+        i += 1
+        name, source = queued[addr]
+
+        blocks, calls, used, fn_trunc = _one_function(md, view, addr, total_insns)
+        total_insns += used
+        if not blocks:
+            continue
+        if source == "entry":
+            display = "entry"
+        elif source in ("export", "symbol"):
+            display = name
+        else:
+            display = f"sub_{addr:x}"
+        functions.append(Function(
+            address=addr, name=display, source=source,
+            blocks=blocks, truncated=fn_trunc))
+        truncated = truncated or fn_trunc
+        # Discover new functions from direct call targets.
+        for t in calls:
+            enqueue(t, f"sub_{t:x}", "call")
+
+    # Present entry first, then named (export/symbol) functions, then sub_*.
+    _source_rank = {"entry": 0, "export": 1, "symbol": 2, "call": 3}
+    functions.sort(key=lambda f: (_source_rank.get(f.source, 9), f.address))
+    entry_blocks = next((f.blocks for f in functions if f.address == view.entry), [])
+    return Disassembly(
+        available=True,
+        arch=view.arch,
+        entry=view.entry,
+        functions=functions,
+        blocks=entry_blocks,
+        truncated=truncated,
+        note="" if functions else "no instructions recovered",
+    )
+
+
+def _one_function(md, view: _CodeView, entry: int, insns_so_far: int
+                  ) -> tuple[list[BasicBlock], list[int], int, bool]:
+    """Build one function's CFG via recursive descent from ``entry``.
+
+    Returns (ordered blocks, direct call targets, instructions used, truncated).
+    """
+    blocks: dict[int, BasicBlock] = {}
+    worklist = [entry]
+    seen: set[int] = set()
+    calls: set[int] = set()
+    used = 0
     truncated = False
 
     while worklist:
         addr = worklist.pop()
         if addr in seen:
             continue
-        if len(blocks) >= _MAX_BLOCKS or total_insns >= _MAX_INSNS:
+        if len(blocks) >= _MAX_BLOCKS or (insns_so_far + used) >= _MAX_TOTAL_INSNS:
             truncated = True
             break
         seen.add(addr)
-
         off = view.offset_of(addr)
         if off is None:
             continue
@@ -216,14 +297,15 @@ def _recursive_descent(view: _CodeView) -> Disassembly:
                 op_str=insn.op_str,
                 bytes_hex=" ".join(f"{b:02x}" for b in insn.bytes),
             ))
-            total_insns += 1
-
-            term = _terminates(insn)
+            used += 1
             fallthrough = insn.address + insn.size
             target = _direct_target(insn)
 
-            # Split at a target we already know starts a block, to keep blocks
-            # non-overlapping (basic-block boundary).
+            if _is_call(insn):
+                if target is not None:
+                    calls.add(target)   # a new function, not an intra-fn edge
+                continue                # calls fall through within this function
+            term = _terminates(insn)
             if term is None and len(block.instructions) >= _MAX_BLOCK_INSNS:
                 block.kind = "fallthrough"
                 block.successors = [fallthrough]
@@ -232,38 +314,29 @@ def _recursive_descent(view: _CodeView) -> Disassembly:
             if term == "ret":
                 block.kind = "ret"
                 break
-            if term == "jump":  # unconditional
+            if term == "jump":
                 block.kind = "jump"
                 if target is not None:
                     block.successors = [target]
                     worklist.append(target)
                 break
-            if term == "cond":  # conditional: target + fallthrough
+            if term == "cond":
                 block.kind = "cond"
                 succ = [s for s in (target, fallthrough) if s is not None]
                 block.successors = succ
                 worklist.extend(succ)
                 break
-            if total_insns >= _MAX_INSNS:
+            if (insns_so_far + used) >= _MAX_TOTAL_INSNS:
                 truncated = True
                 block.kind = "fallthrough"
                 block.successors = [fallthrough]
                 break
         else:
-            # Ran out of decoded bytes without a terminator.
             if block.instructions:
-                nxt = block.instructions[-1].address + 1
-                block.successors = [nxt]
+                block.successors = [block.instructions[-1].address + 1]
 
         if block.instructions:
             blocks[addr] = block
 
     ordered = [blocks[a] for a in sorted(blocks)]
-    return Disassembly(
-        available=True,
-        arch=view.arch,
-        entry=view.entry,
-        blocks=ordered,
-        truncated=truncated,
-        note="" if ordered else "no instructions recovered at entry point",
-    )
+    return ordered, sorted(calls), used, truncated

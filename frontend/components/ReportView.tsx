@@ -73,7 +73,7 @@ export function ReportView({
       <h2 className="sec">Sections &amp; Entropy</h2>
       <SectionsView sections={report.sections} />
 
-      {report.disassembly.available && report.disassembly.blocks.length > 0 && (
+      {report.disassembly.available && report.disassembly.functions.length > 0 && (
         <>
           <h2 className="sec">Disassembly <span className="muted" style={{ textTransform: "none", letterSpacing: 0 }}>— entry-point control-flow graph</span></h2>
           <CfgView dis={report.disassembly} />

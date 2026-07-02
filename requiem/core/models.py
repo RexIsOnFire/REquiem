@@ -236,19 +236,41 @@ class BasicBlock:
 
 
 @dataclass
-class Disassembly:
-    """A recovered control-flow graph rooted at some entry address."""
+class Function:
+    """A recovered function: a named entry address and its basic-block CFG."""
 
-    available: bool = False
-    arch: str = ""
-    entry: int = 0
+    address: int
+    name: str = ""             # symbol/export name, or "sub_<addr>"
+    source: str = "entry"      # entry | export | symbol | call
     blocks: list[BasicBlock] = field(default_factory=list)
-    truncated: bool = False    # hit the instruction/block budget
-    note: str = ""             # why unavailable, or extra context
+    truncated: bool = False
 
     @property
     def instruction_count(self) -> int:
         return sum(len(b.instructions) for b in self.blocks)
+
+
+@dataclass
+class Disassembly:
+    """Recovered control flow for the sample: one or more functions.
+
+    ``entry`` is the program entry point; ``functions`` holds every recovered
+    function (entry first, then named exports/symbols, then call-discovered
+    ``sub_*``). ``blocks`` mirrors the entry function's blocks for backward
+    compatibility with earlier single-function consumers.
+    """
+
+    available: bool = False
+    arch: str = ""
+    entry: int = 0
+    functions: list[Function] = field(default_factory=list)
+    blocks: list[BasicBlock] = field(default_factory=list)  # entry function's blocks
+    truncated: bool = False    # hit a global budget
+    note: str = ""             # why unavailable, or extra context
+
+    @property
+    def instruction_count(self) -> int:
+        return sum(f.instruction_count for f in self.functions)
 
 
 @dataclass

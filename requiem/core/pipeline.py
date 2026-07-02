@@ -72,8 +72,10 @@ def _filter_interesting(strings: list[str], limit: int) -> list[str]:
 
 
 def _parse_format(data: bytes, ident: FileIdentity, report: AnalysisReport) -> dict:
-    """Dispatch to the right format parser; returns extra fingerprint inputs."""
+    """Dispatch to the right format parser; returns extra fingerprint inputs
+    plus ``func_seeds`` (name, VA, source) for CFG function recovery."""
     symbols: list[str] = []
+    func_seeds: list[tuple[str, int, str]] = []
     if ident.format == "pe":
         info = pe.parse(data)
         report.sections = info.sections
@@ -83,11 +85,13 @@ def _parse_format(data: bytes, ident: FileIdentity, report: AnalysisReport) -> d
             ident.entrypoint = info.entrypoint
         if info.is_dotnet:
             report.strings_of_interest.append("[.NET managed assembly]")
+        func_seeds = [(n, a, "export") for n, a in info.func_symbols]
     elif ident.format == "elf":
         info = elf.parse(data)
         report.sections = info.sections
         report.imports = info.imports
         symbols = info.imports
+        func_seeds = [(n, a, "symbol") for n, a in info.func_symbols]
     elif ident.format == "macho":
         info = macho.parse(data)
         report.sections = info.sections
@@ -95,7 +99,7 @@ def _parse_format(data: bytes, ident: FileIdentity, report: AnalysisReport) -> d
         symbols = info.symbols
         if info.entrypoint is not None:
             ident.entrypoint = info.entrypoint
-    return {"symbols": symbols}
+    return {"symbols": symbols, "func_seeds": func_seeds}
 
 
 def analyze(data: bytes, filename: str, options: PipelineOptions | None = None) -> AnalysisReport:
@@ -131,7 +135,8 @@ def analyze(data: bytes, filename: str, options: PipelineOptions | None = None) 
 
     # CFG disassembly (optional; only for native executables).
     if opts.run_disasm and ident.format in ("pe", "elf", "macho"):
-        report.disassembly = disasm.disassemble(data, ident.format)
+        report.disassembly = disasm.disassemble(
+            data, ident.format, seeds=parsed.get("func_seeds"))
 
     # Intel (opt-in).
     if opts.run_intel:

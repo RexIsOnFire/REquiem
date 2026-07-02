@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import type { BasicBlock, Disassembly } from "@/lib/types";
+import type { BasicBlock, Disassembly, FunctionCfg } from "@/lib/types";
 
 // Block-terminator kind -> accent color (matches the HTML report).
 const KIND_COLOR: Record<string, string> = {
@@ -11,34 +11,21 @@ const KIND_COLOR: Record<string, string> = {
   fallthrough: "#8b94a7",
 };
 
+const SOURCE_LABEL: Record<string, string> = {
+  entry: "entry",
+  export: "export",
+  symbol: "symbol",
+  call: "discovered",
+};
+
 function hex(n: number): string {
   return "0x" + Math.round(n).toString(16);
-}
-
-// Order blocks by address (they arrive sorted) and give each a row index so
-// edges can be drawn as curves down the left gutter. A full graph layout is
-// overkill for an entry-point CFG; a vertical stack with edge arcs reads
-// clearly and never overlaps.
-function useLayout(blocks: BasicBlock[]) {
-  return useMemo(() => {
-    const index = new Map<number, number>();
-    blocks.forEach((b, i) => index.set(b.address, i));
-    const edges: { from: number; to: number; back: boolean }[] = [];
-    blocks.forEach((b, i) => {
-      for (const s of b.successors) {
-        const j = index.get(s);
-        if (j !== undefined) edges.push({ from: i, to: j, back: j <= i });
-      }
-    });
-    return { index, edges };
-  }, [blocks]);
 }
 
 function Block({ block }: { block: BasicBlock }) {
   const color = KIND_COLOR[block.kind] ?? "#8b94a7";
   return (
     <div
-      id={`blk-${block.address}`}
       className="card"
       style={{ borderLeft: `3px solid ${color}`, padding: "8px 10px", margin: 0 }}
     >
@@ -47,10 +34,7 @@ function Block({ block }: { block: BasicBlock }) {
         style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}
       >
         <b>loc_{Math.round(block.address).toString(16)}</b>
-        <span
-          className="badge"
-          style={{ borderColor: color, color }}
-        >
+        <span className="badge" style={{ borderColor: color, color }}>
           {block.kind}
         </span>
         {block.successors.length > 0 && (
@@ -74,11 +58,98 @@ function Block({ block }: { block: BasicBlock }) {
   );
 }
 
-export function CfgView({ dis }: { dis: Disassembly }) {
-  const [showGraph, setShowGraph] = useState(true);
-  const { edges } = useLayout(dis.blocks);
+function FunctionList({
+  functions,
+  selected,
+  onSelect,
+}: {
+  functions: FunctionCfg[];
+  selected: number;
+  onSelect: (addr: number) => void;
+}) {
+  const [q, setQ] = useState("");
+  const filtered = useMemo(() => {
+    const needle = q.toLowerCase();
+    return functions.filter(
+      (f) => !needle || f.name.toLowerCase().includes(needle) || hex(f.address).includes(needle),
+    );
+  }, [functions, q]);
 
-  if (!dis.available || dis.blocks.length === 0) {
+  return (
+    <div
+      className="card"
+      style={{ padding: 8, width: 232, flex: "none", alignSelf: "flex-start", maxHeight: 520, display: "flex", flexDirection: "column" }}
+    >
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={`Filter ${functions.length} functions…`}
+        className="mono"
+        style={{
+          background: "var(--panel2)",
+          border: "1px solid var(--line)",
+          borderRadius: 6,
+          color: "var(--tx)",
+          padding: "6px 8px",
+          fontSize: 12,
+          marginBottom: 6,
+        }}
+      />
+      <div style={{ overflowY: "auto" }}>
+        {filtered.map((f) => {
+          const active = f.address === selected;
+          return (
+            <button
+              key={f.address}
+              onClick={() => onSelect(f.address)}
+              className="mono"
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                background: active ? "var(--panel2)" : "transparent",
+                border: "none",
+                borderLeft: `3px solid ${active ? "var(--accent)" : "transparent"}`,
+                color: "var(--tx)",
+                padding: "5px 8px",
+                fontSize: 12,
+                cursor: "pointer",
+                borderRadius: 4,
+              }}
+            >
+              <div
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {f.name}
+              </div>
+              <div className="muted" style={{ fontSize: 10.5 }}>
+                {hex(f.address)} · {SOURCE_LABEL[f.source] ?? f.source}
+              </div>
+            </button>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div className="muted small" style={{ padding: 8 }}>
+            no match
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function CfgView({ dis }: { dis: Disassembly }) {
+  const functions = dis.functions ?? [];
+  const [selectedAddr, setSelectedAddr] = useState<number>(
+    functions[0]?.address ?? dis.entry,
+  );
+  const [showGraph, setShowGraph] = useState(true);
+
+  if (!dis.available || functions.length === 0) {
     return (
       <p className="muted small">
         {dis.note || "No disassembly available."}
@@ -89,55 +160,86 @@ export function CfgView({ dis }: { dis: Disassembly }) {
     );
   }
 
-  const insns = dis.blocks.reduce((a, b) => a + b.instructions.length, 0);
+  const current =
+    functions.find((f) => f.address === selectedAddr) ?? functions[0];
+  const named = functions.filter((f) => f.source === "export" || f.source === "symbol").length;
+  const totalInsns = functions.reduce(
+    (a, f) => a + f.blocks.reduce((s, b) => s + b.instructions.length, 0),
+    0,
+  );
 
   return (
     <div>
-      <div
-        className="small muted"
-        style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}
-      >
-        <span>
-          arch <b>{dis.arch}</b> · entry <span className="mono">{hex(dis.entry)}</span> ·{" "}
-          {dis.blocks.length} blocks · {insns} instructions
-          {dis.truncated && <b style={{ color: "#eab308" }}> · truncated (budget hit)</b>}
-        </span>
-        <button
-          className="btn btn-ghost small"
-          style={{ marginLeft: "auto", padding: "3px 10px" }}
-          onClick={() => setShowGraph((g) => !g)}
-        >
-          {showGraph ? "Linear view" : "Graph view"}
-        </button>
+      <div className="small muted" style={{ marginBottom: 10 }}>
+        arch <b>{dis.arch}</b> · entry <span className="mono">{hex(dis.entry)}</span> ·{" "}
+        {functions.length} functions ({named} named) · {totalInsns} instructions
+        {dis.truncated && <b style={{ color: "#eab308" }}> · truncated (budget hit)</b>}
       </div>
 
-      {showGraph ? (
-        <CfgGraph blocks={dis.blocks} edges={edges} />
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {dis.blocks.map((b) => (
-            <Block key={b.address} block={b} />
-          ))}
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+        <FunctionList
+          functions={functions}
+          selected={current.address}
+          onSelect={setSelectedAddr}
+        />
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}
+          >
+            <b className="mono">{current.name}</b>
+            <span className="muted mono small">
+              {hex(current.address)} · {current.blocks.length} blocks
+            </span>
+            {current.truncated && (
+              <span className="badge" style={{ color: "#eab308" }}>
+                truncated
+              </span>
+            )}
+            <button
+              className="btn btn-ghost small"
+              style={{ marginLeft: "auto", padding: "3px 10px" }}
+              onClick={() => setShowGraph((g) => !g)}
+            >
+              {showGraph ? "Linear view" : "Graph view"}
+            </button>
+          </div>
+
+          {showGraph ? (
+            <CfgGraph key={current.address} blocks={current.blocks} />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {current.blocks.map((b) => (
+                <Block key={b.address} block={b} />
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
-// The graph view: blocks stacked in a column with an SVG gutter on the left
-// drawing arcs between predecessor/successor rows. Forward edges arc down the
-// right of the gutter; back-edges (loops) arc down the left and are dashed.
-function CfgGraph({
-  blocks,
-  edges,
-}: {
-  blocks: BasicBlock[];
-  edges: { from: number; to: number; back: boolean }[];
-}) {
-  const ROW = 118; // nominal row height used for edge geometry
-  const GUTTER = 48;
-  const height = blocks.length * ROW;
+// Graph view: blocks stacked in a column with an SVG gutter drawing arcs
+// between predecessor/successor rows. Forward edges arc down the right of the
+// gutter; back-edges (loops) arc down the left and are dashed.
+function CfgGraph({ blocks }: { blocks: BasicBlock[] }) {
+  const edges = useMemo(() => {
+    const index = new Map<number, number>();
+    blocks.forEach((b, i) => index.set(b.address, i));
+    const es: { from: number; to: number; back: boolean }[] = [];
+    blocks.forEach((b, i) => {
+      for (const s of b.successors) {
+        const j = index.get(s);
+        if (j !== undefined) es.push({ from: i, to: j, back: j <= i });
+      }
+    });
+    return es;
+  }, [blocks]);
 
+  const ROW = 118;
+  const GUTTER = 48;
+  const height = Math.max(blocks.length * ROW, 40);
   const y = (i: number) => i * ROW + 24;
 
   return (
@@ -151,34 +253,26 @@ function CfgGraph({
           const bow = e.back ? -22 : 22;
           const d = `M ${GUTTER - 6} ${y1} C ${x + bow} ${y1}, ${x + bow} ${y2}, ${GUTTER - 6} ${y2}`;
           return (
-            <g key={i}>
-              <path
-                d={d}
-                fill="none"
-                stroke={color}
-                strokeWidth="1.5"
-                strokeDasharray={e.back ? "4 3" : undefined}
-                markerEnd="url(#arrow)"
-              />
-            </g>
+            <path
+              key={i}
+              d={d}
+              fill="none"
+              stroke={color}
+              strokeWidth="1.5"
+              strokeDasharray={e.back ? "4 3" : undefined}
+              markerEnd="url(#arrow)"
+            />
           );
         })}
         <defs>
-          <marker
-            id="arrow"
-            markerWidth="7"
-            markerHeight="7"
-            refX="5"
-            refY="3"
-            orient="auto"
-          >
+          <marker id="arrow" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
             <path d="M0 0 L6 3 L0 6 Z" fill="#4a5568" />
           </marker>
         </defs>
       </svg>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 0, flex: 1, minWidth: 0 }}>
-        {blocks.map((b, i) => (
+      <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+        {blocks.map((b) => (
           <div key={b.address} style={{ height: ROW, paddingBottom: 8 }}>
             <Block block={b} />
           </div>

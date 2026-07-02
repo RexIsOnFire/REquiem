@@ -27,6 +27,8 @@ class PEInfo:
     exports: list[str] = field(default_factory=list)
     imported_dlls: list[str] = field(default_factory=list)
     entrypoint: int | None = None
+    image_base: int = 0
+    func_symbols: list[tuple[str, int]] = field(default_factory=list)  # (name, VA)
     timestamp: int | None = None
     rich_ids: list[int] = field(default_factory=list)         # Rich header comp.id values
     tls_used: bool = False
@@ -69,6 +71,7 @@ def _parse_with_pefile(data: bytes) -> PEInfo:
     ])
     info = PEInfo()
     info.entrypoint = pe.OPTIONAL_HEADER.AddressOfEntryPoint
+    info.image_base = pe.OPTIONAL_HEADER.ImageBase
     info.timestamp = pe.FILE_HEADER.TimeDateStamp
 
     for sect in pe.sections:
@@ -94,7 +97,10 @@ def _parse_with_pefile(data: bytes) -> PEInfo:
     if export_dir:
         for exp in export_dir.symbols:
             if exp.name:
-                info.exports.append(exp.name.decode("latin-1", "replace"))
+                name = exp.name.decode("latin-1", "replace")
+                info.exports.append(name)
+                if exp.address:  # RVA -> VA; only code-ish exports are useful
+                    info.func_symbols.append((name, info.image_base + exp.address))
 
     info.tls_used = hasattr(pe, "DIRECTORY_ENTRY_TLS")
     info.resources = len(getattr(pe, "DIRECTORY_ENTRY_RESOURCE", []) and
@@ -122,6 +128,8 @@ def _parse_stdlib(data: bytes) -> PEInfo:
     opt_magic = struct.unpack_from("<H", data, opt_off)[0]
     is64 = opt_magic == 0x20B
     info.entrypoint = struct.unpack_from("<I", data, opt_off + 16)[0]
+    info.image_base = struct.unpack_from("<Q" if is64 else "<I", data,
+                                         opt_off + (24 if is64 else 28))[0]
 
     # .NET check via COM descriptor data directory (index 14).
     num_dirs = struct.unpack_from("<I", data, opt_off + (108 if is64 else 92))[0]

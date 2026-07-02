@@ -130,11 +130,20 @@ export interface BasicBlock {
   kind: string; // fallthrough | jump | cond | call | ret
 }
 
+export interface FunctionCfg {
+  address: number;
+  name: string;
+  source: string; // entry | export | symbol | call
+  blocks: BasicBlock[];
+  truncated: boolean;
+}
+
 export interface Disassembly {
   available: boolean;
   arch: string;
   entry: number;
-  blocks: BasicBlock[];
+  functions: FunctionCfg[];
+  blocks: BasicBlock[]; // entry function's blocks (back-compat)
   truncated: boolean;
   note: string;
 }

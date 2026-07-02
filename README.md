@@ -122,7 +122,7 @@ Point the proxy at a non-default backend with `NEXT_PUBLIC_API_BASE`.
 | **Language fingerprinting** | Go, Rust, C#/.NET, C/C++ (MSVC/GCC/MinGW), Delphi, Nim, Python-frozen, AutoIt — with compiler + confidence + evidence |
 | **Packer detection** | UPX, Themida, VMProtect, ASPack, MPRESS, Enigma… + generic entropy heuristic |
 | **Strings / IOCs** | URLs, domains, IPs, registry keys, mutexes, file paths, Bitcoin addresses |
-| **Disassembly (CFG)** | Capstone recursive-descent from the entry point → basic-block **control-flow graph** (x86/x64/ARM/ARM64, PE & ELF); rendered as a graph in the UI and a listing in HTML/PDF |
+| **Disassembly (CFG)** | Capstone recursive-descent **function recovery** seeded from PE exports / ELF symbols **and** call-target discovery (named or `sub_<addr>`); each function as a basic-block **control-flow graph** (x86/x64/ARM/ARM64, PE & ELF). Navigable function list in the UI; per-function listings in HTML/PDF |
 | **YARA** | starter behavioral ruleset (extend in `rules/`) |
 | **Intel** | MalwareBazaar / VirusTotal (keys-optional) — metadata only |
 | **Dynamic (simulated)** | process tree, network, filesystem/registry ops, **memory findings** (RWX regions, large heap + AES loops — the ransomware story) |
@@ -178,7 +178,8 @@ python -m requiem.cli analyze sample.exe --sandbox cape
 
 ## Roadmap
 
-- Function recovery beyond the entry point (symbol/export-seeded CFGs)
+- Mach-O disassembly (code-view + entry mapping)
+- Cross-references (xref) and call-graph view across recovered functions
 - Family-level YARA signatures
 - Additional sandbox adapters (Cuckoo, Joe, Triage) behind `DynamicBackend`
 

@@ -46,14 +46,47 @@ def test_cfg_splits_at_conditional_branch():
     assert dis.available
     assert dis.arch == "x64"
     assert dis.entry == 0x140001000
+    # The entry function's blocks (mirrored on .blocks for back-compat).
     assert len(dis.blocks) == 3
-    entry_block = dis.blocks[0]
+    entry_fn = dis.functions[0]
+    assert entry_fn.source == "entry"
+    entry_block = entry_fn.blocks[0]
     assert entry_block.kind == "cond"
     assert len(entry_block.successors) == 2   # branch target + fallthrough
-    # Both leaf blocks return.
-    leaves = [b for b in dis.blocks if not b.successors]
+    leaves = [b for b in entry_fn.blocks if not b.successors]
     assert len(leaves) == 2
     assert all(b.kind == "ret" for b in leaves)
+
+
+# entry: call sub(+0x0B); ret. sub@+0x10: xor rax,rax; ret
+_WITH_CALL = (bytes([0xE8, 0x0B, 0x00, 0x00, 0x00, 0xC3])
+              + b"\x90" * (0x10 - 6) + bytes([0x48, 0x31, 0xC0, 0xC3]))
+
+
+@pytest.mark.skipif(not _HAVE_CAPSTONE, reason="capstone not installed")
+def test_call_target_discovers_function():
+    dis = disasm.disassemble(_pe_with_code(_WITH_CALL), "pe")
+    assert len(dis.functions) == 2
+    entry_fn = dis.functions[0]
+    assert entry_fn.source == "entry"
+    sub = dis.functions[1]
+    assert sub.source == "call"
+    assert sub.name.startswith("sub_")
+    assert sub.address == 0x140001010
+    # The call did NOT become an intra-function edge.
+    assert entry_fn.blocks[0].kind == "ret"
+
+
+@pytest.mark.skipif(not _HAVE_CAPSTONE, reason="capstone not installed")
+def test_named_seed_names_and_prioritizes_function():
+    dis = disasm.disassemble(
+        _pe_with_code(_WITH_CALL), "pe",
+        seeds=[("encrypt_files", 0x140001010, "export")])
+    names = {f.name: f.source for f in dis.functions}
+    assert names.get("encrypt_files") == "export"
+    # Named functions come before call-discovered ones.
+    sources = [f.source for f in dis.functions]
+    assert sources.index("export") < len(sources)
 
 
 @pytest.mark.skipif(not _HAVE_CAPSTONE, reason="capstone not installed")
@@ -86,6 +119,40 @@ def test_unavailable_when_no_capstone_is_graceful(monkeypatch):
 def test_non_native_format_skipped():
     dis = disasm.disassemble(b"not an executable", "script")
     assert dis.available is False
+
+
+def _elf_with_func(func_name=b"decrypt", func_addr=0x1129) -> bytes:
+    """Minimal ELF64 carrying one defined STT_FUNC symbol in .symtab."""
+    strtab = b"\x00" + func_name + b"\x00"
+    sym0 = struct.pack("<IBBHQQ", 0, 0, 0, 0, 0, 0)
+    sym1 = struct.pack("<IBBHQQ", 1, 0x12, 0, 1, func_addr, 8)  # global STT_FUNC
+    symtab = sym0 + sym1
+    shstr = b"\x00.symtab\x00.strtab\x00.shstrtab\x00.text\x00"
+    off_sym = 64
+    off_str = off_sym + len(symtab)
+    off_shstr = off_str + len(strtab)
+    off_sh = off_shstr + len(shstr)
+
+    def sh(name, typ, off, size, link=0, entsize=0, flags=0, addr=0):
+        return struct.pack("<IIQQQQIIQQ", name, typ, flags, addr, off, size,
+                           link, 0, 1, entsize)
+
+    shtab = (sh(0, 0, 0, 0)
+             + sh(shstr.index(b".text"), 1, 0, 0, flags=6, addr=0x1000)
+             + sh(shstr.index(b".symtab"), 2, off_sym, len(symtab), link=3, entsize=24)
+             + sh(shstr.index(b".strtab"), 3, off_str, len(strtab))
+             + sh(shstr.index(b".shstrtab"), 3, off_shstr, len(shstr)))
+    e = b"\x7fELF" + bytes([2, 1, 1, 0]) + b"\x00" * 8
+    e += struct.pack("<HHIQQQIHHHHHH", 2, 0x3E, 1, 0x1000, 0, off_sh,
+                     0, 64, 0, 0, 64, 5, 4)
+    return e + symtab + strtab + shstr + shtab
+
+
+def test_elf_extracts_function_symbols():
+    from requiem.static import elf
+    info = elf.parse(_elf_with_func())
+    assert ("decrypt", 0x1129) in info.func_symbols
+    assert info.is_stripped is False
 
 
 def test_pipeline_populates_disassembly_and_serializes():

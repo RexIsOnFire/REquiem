@@ -161,15 +161,9 @@ _BLOCK_KIND_COLOR = {
 }
 
 
-def _disassembly(dis) -> str:
-    """Linear listing grouped by basic block, with successor annotations."""
-    if not getattr(dis, "available", False) or not dis.blocks:
-        return ""
-    out = [f'<div class="muted small" style="margin-bottom:8px">arch {_e(dis.arch)} · '
-           f'entry {dis.entry:#x} · {len(dis.blocks)} blocks · '
-           f'{sum(len(b.instructions) for b in dis.blocks)} instructions'
-           + (' · <b>truncated</b>' if dis.truncated else '') + '</div>']
-    for b in dis.blocks:
+def _disasm_blocks(blocks) -> str:
+    out = []
+    for b in blocks:
         color = _BLOCK_KIND_COLOR.get(b.kind, "#8b94a7")
         succ = (" → " + ", ".join(f"{s:#x}" for s in b.successors)) if b.successors else ""
         rows = "".join(
@@ -183,6 +177,28 @@ def _disassembly(dis) -> str:
             f'<div class="blockhead mono">loc_{b.address:x} '
             f'<span class="badge" style="border-color:{color};color:{color}">{_e(b.kind)}</span>'
             f'<span class="muted">{_e(succ)}</span></div>{rows}</div>')
+    return "".join(out)
+
+
+def _disassembly(dis) -> str:
+    """Per-function listing: each recovered function as its basic-block CFG."""
+    funcs = getattr(dis, "functions", None) or []
+    if not getattr(dis, "available", False) or not funcs:
+        return ""
+    named = sum(1 for f in funcs if f.source in ("export", "symbol"))
+    out = [f'<div class="muted small" style="margin-bottom:10px">arch {_e(dis.arch)} · '
+           f'entry {dis.entry:#x} · {len(funcs)} functions ({named} named) · '
+           f'{dis.instruction_count} instructions'
+           + (' · <b>truncated</b>' if dis.truncated else '') + '</div>']
+    for fn in funcs:
+        tag = {"entry": "entry", "export": "export", "symbol": "symbol",
+               "call": "discovered"}.get(fn.source, fn.source)
+        out.append(
+            f'<div class="func"><div class="funchead mono">'
+            f'<b>{_e(fn.name)}</b> <span class="muted">@ {fn.address:#x}</span> '
+            f'<span class="badge">{tag}</span> '
+            f'<span class="muted">{len(fn.blocks)} blocks</span></div>'
+            f'{_disasm_blocks(fn.blocks)}</div>')
     return "".join(out)
 
 
@@ -268,7 +284,7 @@ def render(report: AnalysisReport) -> str:
     heap_section = (f'<h2>Heap Growth <span class="muted">&middot; committed memory over time</span></h2>'
                     f'<div class="card">{heap_svg}</div>') if heap_svg else ""
     disasm_html = _disassembly(report.disassembly)
-    disasm_section = (f'<h2>Disassembly (CFG) <span class="muted">&middot; entry-point control flow'
+    disasm_section = (f'<h2>Disassembly (CFG) <span class="muted">&middot; recovered functions'
                       f'</span></h2><div class="card">{disasm_html}</div>') if disasm_html else ""
 
     return _TEMPLATE.format(
@@ -350,6 +366,8 @@ table.heat .empty{{background:var(--panel)}} table.heat b{{font-size:11px}}
 .sim{{background:#7c4a03;color:#ffd7a1;font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px}}
 .real{{background:#7f1d1d;color:#fecaca;font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px}}
 .proc{{font-family:monospace;font-size:12.5px;padding:1px 0}}
+.func{{margin:14px 0;padding-left:8px;border-left:2px solid var(--line)}}
+.funchead{{font-size:13px;margin-bottom:6px}}
 .block{{border-left:3px solid #8b94a7;padding:4px 0 4px 10px;margin:8px 0;background:var(--panel2)}}
 .blockhead{{font-size:12px;margin-bottom:3px}}
 .disln{{font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:nowrap;padding:0 4px}}
