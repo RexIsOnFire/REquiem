@@ -94,8 +94,15 @@ export function ReportView({
   );
 }
 
+const YARA_SEV_COLOR: Record<string, string> = {
+  info: "#5b6472",
+  low: "#3b82f6",
+  medium: "#eab308",
+  high: "#f97316",
+  critical: "#ef4444",
+};
+
 function IntelTable({ report }: { report: AnalysisReport }) {
-  const yara = report.yara_matches.join(", ") || "—";
   return (
     <div>
       <div className="scroll">
@@ -128,9 +135,32 @@ function IntelTable({ report }: { report: AnalysisReport }) {
           </tbody>
         </table>
       </div>
-      <p className="muted small" style={{ marginTop: 8 }}>
-        YARA matches: {yara}
-      </p>
+      <div style={{ marginTop: 10 }}>
+        <div className="muted small" style={{ marginBottom: 6 }}>
+          YARA matches
+        </div>
+        {report.yara_matches.length === 0 ? (
+          <span className="muted small">—</span>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {report.yara_matches.map((m, i) => {
+              const color = YARA_SEV_COLOR[m.severity] ?? "#5b6472";
+              return (
+                <span
+                  key={i}
+                  className="badge"
+                  title={m.description}
+                  style={{ borderColor: color, color }}
+                >
+                  {m.family ? `${m.family} · ` : ""}
+                  {m.rule}
+                  {m.malware_type ? ` (${m.malware_type})` : ""}
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

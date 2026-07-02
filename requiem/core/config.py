@@ -26,8 +26,12 @@ KNOWN_KEYS = (
     "MALWAREBAZAAR_API_KEY",
     "CAPE_URL",
     "CAPE_TOKEN",
-    "CAPE_TIMEOUT",
-    "CAPE_POLL",
+    "CUCKOO_URL",
+    "CUCKOO_TOKEN",
+    "JOE_URL",
+    "JOE_APIKEY",
+    "TRIAGE_URL",
+    "TRIAGE_TOKEN",
 )
 
 

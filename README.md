@@ -147,7 +147,7 @@ Point the proxy at a non-default backend with `NEXT_PUBLIC_API_BASE`.
 | **Packer detection** | UPX, Themida, VMProtect, ASPack, MPRESS, Enigma… + generic entropy heuristic |
 | **Strings / IOCs** | URLs, domains, IPs, registry keys, mutexes, file paths, Bitcoin addresses |
 | **Disassembly (CFG)** | Capstone recursive-descent **function recovery** seeded from PE exports / ELF symbols **and** call-target discovery (named or `sub_<addr>`); each function as a basic-block **control-flow graph** (x86/x64/ARM/ARM64, PE & ELF). Navigable function list in the UI; per-function listings in HTML/PDF |
-| **YARA** | starter behavioral ruleset (extend in `rules/`) |
+| **YARA (family-level)** | behavioral + **family** rules (WannaCry, LockBit, RedLine, loaders, RATs…) with rich `meta:` — a family match sets the classification, drives an explainable finding, and contributes ATT&CK techniques |
 | **Intel** | MalwareBazaar / VirusTotal (keys-optional) — metadata only |
 | **Dynamic (simulated)** | process tree, network, filesystem/registry ops, **memory findings** (RWX regions, large heap + AES loops — the ransomware story) |
 | **Memory visualization** | address-space **memory map** (regions by kind, R/W/X, file-backed vs unbacked, suspicious-flagged) + **heap-growth timeline** (committed bytes over execution) — in the web UI, HTML, and PDF |
@@ -177,35 +177,35 @@ The pipeline is a **pure function** (`analyze(bytes, name) -> AnalysisReport`),
 which makes moving it behind a Celery/RQ worker for the production backend a
 mechanical change.
 
-## Real detonation — the CAPE backend
+## Real detonation — sandbox backends
 
 By default the dynamic stage is a clearly-badged **simulation** (ReQuiem never
 executes samples itself). To get real behavior, point ReQuiem at a separately
-operated [CAPE Sandbox](https://github.com/kevoreilly/CAPEv2) — CAPE provides
-the isolated VM, API hooking, memory capture, and network control; ReQuiem
-submits the sample, polls for the report, and maps it into the same
-`DynamicBehavior` model the rest of the app consumes.
+operated sandbox — it provides the isolated VM, API hooking, memory capture, and
+network control; ReQuiem submits the sample, polls for the report, and maps it
+into the same `DynamicBehavior` model the rest of the app consumes.
+
+Four sandboxes are supported: **CAPE**, **Cuckoo**, **Joe**, **Triage**.
 
 ```bash
-export CAPE_URL=https://cape.lan     # your CAPE web/API base
-export CAPE_TOKEN=...                # optional API token
-python -m requiem.cli analyze sample.exe --sandbox cape
+export CAPE_URL=https://your-cape        # (or CUCKOO_URL / JOE_URL+JOE_APIKEY / TRIAGE_TOKEN)
+python -m requiem.cli analyze sample.exe --sandbox cape     # cape|cuckoo|joe|triage
 ```
 
-- **Nothing detonates locally.** ReQuiem only talks to the CAPE URL you supply.
-- **Never hard-fails.** If CAPE is unconfigured, unreachable, or times out, the
-  run transparently falls back to the simulated backend (the report shows the
-  fallback reason).
-- The CAPE-report→model mapping lives in `dynamic/cape_map.py` as a pure,
-  fully-tested function; adding another sandbox (Cuckoo/Joe/Triage) is a new
-  `DynamicBackend` + mapper, nothing else.
+- **Nothing detonates locally.** ReQuiem only talks to the sandbox you supply.
+- **Never hard-fails.** If the sandbox is unconfigured, unreachable, or times
+  out, the run transparently falls back to the simulated backend (the report
+  shows the fallback reason).
+- **One normalizer, thin adapters.** Every sandbox parses its native report into
+  a common `NormalizedReport` (`dynamic/normalize.py`); the region-classification,
+  heap-synthesis, severity and ATT&CK mapping live there *once*. Adding a fifth
+  sandbox is just a small client + a parser into that shape.
 
 ## Roadmap
 
 - Mach-O disassembly (code-view + entry mapping)
 - Cross-references (xref) and call-graph view across recovered functions
-- Family-level YARA signatures
-- Additional sandbox adapters (Cuckoo, Joe, Triage) behind `DynamicBackend`
+- Broader family YARA coverage + auto-updating community rulesets
 
 ## Safety & scope
 

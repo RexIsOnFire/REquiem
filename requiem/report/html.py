@@ -310,7 +310,9 @@ def render(report: AnalysisReport) -> str:
         sections=sect_rows or '<tr><td colspan=4 class="muted">No sections.</td></tr>',
         iocs=_ioc_section(report),
         intel=intel_rows,
-        yara=", ".join(_e(y) for y in report.yara_matches) or "—",
+        yara=", ".join(
+            _e(f"{m.rule}" + (f" [{m.family}]" if m.family else ""))
+            for m in report.yara_matches) or "—",
         dyn_badge=dyn_badge,
         proc=proc,
         mem_section=mem_section,

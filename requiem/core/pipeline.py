@@ -33,20 +33,29 @@ class PipelineOptions:
     max_strings: int = 60_000
     intel_providers: list[IntelProvider] | None = None
     dynamic_backend: DynamicBackend | None = None   # explicit override wins
-    sandbox: str = "simulated"       # "simulated" | "cape"
+    sandbox: str = "simulated"       # simulated | cape | cuckoo | joe | triage
     interesting_string_limit: int = 400
 
 
 def _resolve_backend(opts: "PipelineOptions") -> DynamicBackend:
     """Pick the dynamic backend. An explicit ``dynamic_backend`` always wins;
-    otherwise ``sandbox`` selects one. A configured-but-unreachable CAPE falls
-    back to the simulated backend so a run never hard-fails on sandbox trouble.
+    otherwise ``sandbox`` selects one. A configured-but-unreachable real sandbox
+    falls back to simulated (in ``analyze``) so a run never hard-fails.
     """
     if opts.dynamic_backend is not None:
         return opts.dynamic_backend
     if opts.sandbox == "cape":
         from ..dynamic.cape import CapeBackend
         return CapeBackend()
+    if opts.sandbox == "cuckoo":
+        from ..dynamic.cuckoo import CuckooBackend
+        return CuckooBackend()
+    if opts.sandbox == "joe":
+        from ..dynamic.joe import JoeBackend
+        return JoeBackend()
+    if opts.sandbox == "triage":
+        from ..dynamic.triage import TriageBackend
+        return TriageBackend()
     return SimulatedBackend()
 
 

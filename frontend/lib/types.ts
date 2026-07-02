@@ -102,6 +102,17 @@ export interface HeapSample {
   note: string;
 }
 
+export interface YaraMatch {
+  rule: string;
+  family: string | null;
+  malware_type: string | null;
+  description: string;
+  severity: string;
+  attack: string[];
+  tags: string[];
+  matched_strings: string[];
+}
+
 export interface DynamicBehavior {
   executed: boolean;
   backend: string;
@@ -167,7 +178,7 @@ export interface AnalysisReport {
   exports: string[];
   strings_of_interest: string[];
   iocs: IOCSet;
-  yara_matches: string[];
+  yara_matches: YaraMatch[];
   intel: IntelResult[];
   dynamic: DynamicBehavior;
   disassembly: Disassembly;

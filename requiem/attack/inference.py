@@ -225,11 +225,50 @@ def run_inference(report: AnalysisReport) -> None:
             *[f"{p.name} ({p.confidence.name})" for p in report.packers])
         report.findings.append(f)
 
+    # 3.5 YARA family matches -> high-confidence findings.
+    report.findings.extend(_yara_findings(report))
+
     # 4. Aggregate ATT&CK techniques from all findings.
     _aggregate_attack(report)
 
     # 5. Verdict + classification + summary.
     _verdict(report)
+
+
+_YARA_SEVERITY = {
+    "info": Severity.INFO, "low": Severity.LOW, "medium": Severity.MEDIUM,
+    "high": Severity.HIGH, "critical": Severity.CRITICAL,
+}
+
+
+def _yara_findings(report: AnalysisReport) -> list[Finding]:
+    out: list[Finding] = []
+    for m in report.yara_matches:
+        sev = _YARA_SEVERITY.get(m.severity, Severity.MEDIUM)
+        title = f"YARA family match: {m.family}" if m.family else f"YARA rule: {m.rule}"
+        desc = m.description or f"Matched YARA rule {m.rule}."
+        f = Finding(title=title, description=desc,
+                    confidence=Confidence.HIGH, severity=sev,
+                    attack_techniques=list(m.attack),
+                    tags=["yara"] + ([m.malware_type] if m.malware_type else []))
+        f.evidence.append(Evidence(detail=f"rule '{m.rule}' matched", source="yara"))
+        if m.matched_strings:
+            f.evidence.append(Evidence(
+                detail="matched: " + ", ".join(m.matched_strings[:8]), source="yara"))
+        out.append(f)
+    return out
+
+
+def _yara_classification(report: AnalysisReport) -> str | None:
+    """Strongest malware_type asserted by a matched family rule, if any."""
+    # Prefer a concrete family's type; ransomware/stealer over generic.
+    priority = {"ransomware": 4, "infostealer": 3, "rat": 3, "loader": 2}
+    best, best_rank = None, -1
+    for m in report.yara_matches:
+        t = m.malware_type
+        if t and priority.get(t, 1) > best_rank:
+            best, best_rank = t, priority.get(t, 1)
+    return best
 
 
 def _aggregate_attack(report: AnalysisReport) -> None:
@@ -282,8 +321,16 @@ def _verdict(report: AnalysisReport) -> None:
     else:
         report.verdict, report.verdict_confidence = "benign", Confidence.LOW
 
-    # Classification.
-    if titles & _RANSOM_MARKERS:
+    # Classification — a named YARA family is the strongest signal and wins.
+    yara_type = _yara_classification(report)
+    _TYPE_LABEL = {"ransomware": "ransomware", "infostealer": "credential-stealer",
+                   "rat": "backdoor/RAT", "loader": "loader"}
+    if yara_type:
+        report.classification = _TYPE_LABEL.get(yara_type, yara_type)
+        # A concrete family match also floors the verdict at malicious.
+        report.verdict = "malicious"
+        report.verdict_confidence = max(report.verdict_confidence, Confidence.HIGH)
+    elif titles & _RANSOM_MARKERS:
         report.classification = "ransomware"
     elif titles & _STEALER_MARKERS:
         report.classification = "credential-stealer"

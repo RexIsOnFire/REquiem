@@ -1,0 +1,26 @@
+{
+  "version": "0.3.0",
+  "sample": {"id": "abc", "target": "invoice.exe", "score": 10},
+  "processes": [
+    {"pid": 800, "ppid": 4, "image": "invoice.exe", "cmd": "\"invoice.exe\""},
+    {"pid": 812, "ppid": 800, "image": "vssadmin.exe", "cmd": "vssadmin delete shadows /all /quiet"},
+    {"pid": 820, "ppid": 800, "image": "cmd.exe", "cmd": "cmd /c bcdedit /set recoveryenabled no"}
+  ],
+  "network": {
+    "requests": [
+      {"dst": "185.10.10.5:80", "http_request": {"method": "POST", "url": "http://185.10.10.5/gate"}},
+      {"dns_request": {"domains": ["pay-decrypt.example.onion"]}}
+    ],
+    "flows": [{"dst": "185.10.10.5:443"}]
+  },
+  "dumped": [
+    {"address": "0x400000", "length": 1048576, "protection": "PAGE_EXECUTE_READ", "name": "invoice.exe"},
+    {"address": "0x320000", "length": 524288, "protection": "PAGE_EXECUTE_READWRITE", "injected": true},
+    {"address": "0x3000000", "length": 335544320, "protection": "PAGE_READWRITE"}
+  ],
+  "signatures": [
+    {"name": "ransomware", "desc": "Ransomware file encryption", "score": 10, "ttp": ["T1486"]},
+    {"name": "inhibit_recovery", "desc": "Inhibits system recovery", "score": 8, "ttp": ["T1490"]},
+    {"name": "injection", "desc": "Writes to another process memory", "score": 7, "ttp": ["T1055"]}
+  ]
+}

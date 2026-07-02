@@ -1,0 +1,32 @@
+{
+  "analysis": {
+    "behavior": {
+      "system": {
+        "processes": {
+          "process": [
+            {"pid": 100, "name": "invoice.exe", "cmdline": "invoice.exe", "parentpid": 4},
+            {"pid": 120, "name": "vssadmin.exe", "cmdline": "vssadmin delete shadows /all", "parentpid": 100},
+            {"pid": 140, "name": "cmd.exe", "cmdline": "cmd.exe /c bcdedit", "parentpid": 100}
+          ]
+        }
+      },
+      "memorydumps": {
+        "dump": [
+          {"address": "0x400000", "size": 1048576, "protect": "PAGE_EXECUTE_READ", "path": "C:\\invoice.exe"},
+          {"address": "0x320000", "size": 524288, "protect": "PAGE_EXECUTE_READWRITE", "injected": true},
+          {"address": "0x3000000", "size": 268435456, "protect": "PAGE_READWRITE"}
+        ]
+      }
+    },
+    "network": {
+      "http": {"packet": [{"method": "POST", "uri": "http://185.10.10.5/gate", "host": "185.10.10.5"}]},
+      "dns": {"packet": [{"name": "pay.example.onion"}]}
+    },
+    "signatures": {
+      "signature": [
+        {"name": "ransomware_encrypt", "description": "Encrypts user files", "impact": 9, "mitreattack": ["T1486"]},
+        {"name": "delete_shadows", "description": "Deletes volume shadow copies", "impact": 8, "mitreattack": ["T1490"]}
+      ]
+    }
+  }
+}

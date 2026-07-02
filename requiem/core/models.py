@@ -135,6 +135,20 @@ class IOCSet:
 
 
 @dataclass
+class YaraMatch:
+    """A matched YARA rule and the family-level metadata from its ``meta:``."""
+
+    rule: str
+    family: str | None = None
+    malware_type: str | None = None     # ransomware | infostealer | loader | rat ...
+    description: str = ""
+    severity: str = "medium"            # info | low | medium | high | critical
+    attack: list[str] = field(default_factory=list)   # e.g. ["T1486"]
+    tags: list[str] = field(default_factory=list)
+    matched_strings: list[str] = field(default_factory=list)  # identifiers that hit
+
+
+@dataclass
 class IntelResult:
     """Result of a hash-reputation lookup. Never contains the binary itself."""
 
@@ -297,7 +311,7 @@ class AnalysisReport:
     exports: list[str] = field(default_factory=list)
     strings_of_interest: list[str] = field(default_factory=list)
     iocs: IOCSet = field(default_factory=IOCSet)
-    yara_matches: list[str] = field(default_factory=list)
+    yara_matches: list[YaraMatch] = field(default_factory=list)
 
     intel: list[IntelResult] = field(default_factory=list)
     dynamic: DynamicBehavior = field(default_factory=DynamicBehavior)

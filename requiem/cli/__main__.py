@@ -179,9 +179,10 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--pdf", metavar="PATH", help="write PDF report (needs weasyprint or playwright)")
     a.add_argument("--json", metavar="PATH", help="write JSON report")
     a.add_argument("--intel", action="store_true", help="perform online hash-reputation lookup")
-    a.add_argument("--sandbox", choices=["simulated", "cape"], default="simulated",
-                   help="dynamic backend: 'simulated' (default) or 'cape' (needs CAPE_URL). "
-                        "CAPE falls back to simulated if unreachable.")
+    a.add_argument("--sandbox", choices=["simulated", "cape", "cuckoo", "joe", "triage"],
+                   default="simulated",
+                   help="dynamic backend (default 'simulated'). Real sandboxes need their "
+                        "*_URL/*_TOKEN env vars and fall back to simulated if unreachable.")
     a.add_argument("--no-dynamic", action="store_true", help="skip the dynamic stage")
     a.add_argument("--no-yara", action="store_true", help="skip YARA scanning")
     a.add_argument("--quiet", action="store_true", help="suppress console report")
