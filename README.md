@@ -1,8 +1,8 @@
-# ReQuiem — Malware Analysis Workbench
+# REquiem — Malware Analysis Workbench
 
 > **One upload · one investigation · one report · one ATT&CK view · one IOC export.**
 
-ReQuiem is an all-in-one reverse-engineering workbench. Give it a **file** or a
+REquiem is an all-in-one reverse-engineering workbench. Give it a **file** or a
 **hash** and it produces an *explainable* technical report: what language the
 sample was built in, how it's packed, what it does, which MITRE ATT&CK techniques
 it maps to, and **why** — with the evidence attached to every claim.
