@@ -12,6 +12,7 @@ export async function analyzeFile(
   const res = await fetch(`${BASE}/analyze?intel=${intel}`, {
     method: "POST",
     body: form,
+    credentials: "same-origin",
   });
   if (!res.ok) {
     throw new Error(`Analysis failed (${res.status}): ${await safeText(res)}`);
@@ -23,9 +24,75 @@ export async function lookupHash(
   hash: string,
   online = false,
 ): Promise<{ hash: string; note: string; results: IntelResult[] }> {
-  const res = await fetch(`${BASE}/hash/${encodeURIComponent(hash)}?online=${online}`);
-  if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
+  const res = await fetch(`${BASE}/hash/${encodeURIComponent(hash)}?online=${online}`, {
+    credentials: "same-origin",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Lookup failed (${res.status})`);
+  }
   return res.json();
+}
+
+// --- auth + per-user keys ------------------------------------------------
+export interface AuthUser {
+  id: number;
+  email: string;
+  created_at?: string;
+}
+
+async function authPost(path: string, body: object): Promise<AuthUser> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    credentials: "same-origin",
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+  return data;
+}
+
+export const register = (email: string, password: string) =>
+  authPost("/auth/register", { email, password });
+export const login = (email: string, password: string) =>
+  authPost("/auth/login", { email, password });
+
+export async function logout(): Promise<void> {
+  await fetch(`${BASE}/auth/logout`, { method: "POST", credentials: "same-origin" });
+}
+
+export async function me(): Promise<AuthUser | null> {
+  const res = await fetch(`${BASE}/auth/me`, { credentials: "same-origin" });
+  if (res.status === 401) return null;
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function getKeyStatus(): Promise<{
+  allowed: string[];
+  status: Record<string, boolean>;
+}> {
+  const res = await fetch(`${BASE}/keys`, { credentials: "same-origin" });
+  if (!res.ok) throw new Error("not authenticated");
+  return res.json();
+}
+
+export async function saveKey(name: string, value: string): Promise<void> {
+  const res = await fetch(`${BASE}/keys`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, value }),
+    credentials: "same-origin",
+  });
+  if (!res.ok) throw new Error(`Failed to save ${name}`);
+}
+
+export async function deleteKey(name: string): Promise<void> {
+  await fetch(`${BASE}/keys/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
 }
 
 export async function getAttackMatrix(): Promise<AttackMatrix> {
@@ -42,8 +109,13 @@ export async function investigateHash(hash: string): Promise<{
   sources: { source: string; found: boolean; note: string }[];
   report: AnalysisReport;
 }> {
-  const res = await fetch(`${BASE}/investigate/${encodeURIComponent(hash)}`);
-  if (!res.ok) throw new Error(`Investigation failed (${res.status})`);
+  const res = await fetch(`${BASE}/investigate/${encodeURIComponent(hash)}`, {
+    credentials: "same-origin",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Investigation failed (${res.status})`);
+  }
   return res.json();
 }
 

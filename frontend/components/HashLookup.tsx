@@ -58,7 +58,12 @@ export function HashLookup({
       }
       onReport(res.report);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Investigation failed");
+      const msg = e instanceof Error ? e.message : "Investigation failed";
+      setError(
+        /sign in|api key/i.test(msg)
+          ? msg + " — Sign in and add keys under API keys."
+          : msg,
+      );
     } finally {
       setBusy(null);
     }

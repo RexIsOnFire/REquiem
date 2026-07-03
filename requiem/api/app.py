@@ -23,7 +23,7 @@ from ..report import html
 from ..report import pdf as pdf_report
 
 try:
-    from fastapi import FastAPI, File, UploadFile, Query, Body
+    from fastapi import FastAPI, File, UploadFile, Query, Body, Cookie
     from fastapi.responses import HTMLResponse, JSONResponse, Response
     from fastapi.concurrency import run_in_threadpool
 except Exception as exc:  # pragma: no cover
@@ -32,8 +32,20 @@ except Exception as exc:  # pragma: no cover
 app = FastAPI(title="ReQuiem", version="0.1.0",
               description="All-in-one malware analysis workbench")
 
+from .auth_routes import router as auth_router, current_user  # noqa: E402
+app.include_router(auth_router)
+
 # Cap upload size to keep a demo instance safe (100 MB).
 _MAX_BYTES = 100 * 1024 * 1024
+
+
+def _user_keys(session: str | None) -> dict[str, str]:
+    """Decrypted API keys for the session's user, or {} for anonymous."""
+    user = current_user(session)
+    if user is None:
+        return {}
+    from ..auth.store import get_store
+    return get_store().get_keys(user.id)
 
 
 def _options(intel: bool) -> PipelineOptions:
@@ -70,8 +82,24 @@ def attack_matrix():
 
 
 @app.get("/hash/{value}")
-def hash_lookup(value: str, online: bool = Query(False)):
-    providers = default_providers(offline=not online)
+def hash_lookup(value: str, online: bool = Query(False),
+                requiem_session: str | None = Cookie(default=None)):
+    if online:
+        from ..intel.providers import providers_for_keys
+        user = current_user(requiem_session)
+        if user is None:
+            return JSONResponse(status_code=401, content={
+                "error": "Sign in for online lookups.",
+            })
+        from ..auth.store import get_store
+        keys = get_store().get_keys(user.id)
+        if not keys:
+            return JSONResponse(status_code=400, content={
+                "error": "Add an API key under API keys for online lookups.",
+            })
+        providers = providers_for_keys(keys)
+    else:
+        providers = default_providers(offline=True)
     results = gather_intel(providers, sha256=value, md5=None, sha1=None)
     return {
         "hash": value,
@@ -81,20 +109,33 @@ def hash_lookup(value: str, online: bool = Query(False)):
 
 
 @app.get("/investigate/{value}")
-async def investigate_by_hash(value: str):
+async def investigate_by_hash(value: str, requiem_session: str | None = Cookie(default=None)):
     """Full by-hash investigation with **no upload and no local sandbox**:
     reputation intel + any *existing* cloud detonation (Triage / VirusTotal /
-    Hybrid Analysis) mapped into behavior + inferred ATT&CK. This is the
-    public-facing 'paste a hash, get an investigation' path."""
-    from ..dynamic.cloud import (default_cloud_providers, first_behavior,
+    Hybrid Analysis) mapped into behavior + inferred ATT&CK. Uses the logged-in
+    user's own API keys."""
+    from ..dynamic.cloud import (cloud_providers_for_keys, first_behavior,
                                  gather_cloud_behavior)
+    from ..intel.providers import providers_for_keys
     from ..attack.inference import run_inference
     from ..core.models import AnalysisReport, FileIdentity, DynamicBehavior
 
-    intel = gather_intel(default_providers(offline=False),
-                         sha256=value, md5=None, sha1=None)
+    user = current_user(requiem_session)
+    if user is None:
+        return JSONResponse(status_code=401, content={
+            "error": "Sign in to investigate by hash.",
+        })
+    from ..auth.store import get_store
+    keys = get_store().get_keys(user.id)
+    if not keys:
+        return JSONResponse(status_code=400, content={
+            "error": "Add at least one API key (VirusTotal / Hybrid Analysis) "
+                     "under API keys to investigate by hash.",
+        })
+
+    intel = gather_intel(providers_for_keys(keys), sha256=value, md5=None, sha1=None)
     cloud = await run_in_threadpool(
-        gather_cloud_behavior, default_cloud_providers(offline=False), sha256=value)
+        gather_cloud_behavior, cloud_providers_for_keys(keys), sha256=value)
 
     behavior = first_behavior(cloud) or DynamicBehavior()
     ident = FileIdentity(filename=f"{value[:16]}…", size=0,
@@ -113,11 +154,17 @@ async def investigate_by_hash(value: str):
 
 
 @app.post("/analyze")
-async def analyze_upload(file: UploadFile = File(...), intel: bool = Query(False)):
+async def analyze_upload(file: UploadFile = File(...), intel: bool = Query(False),
+                         requiem_session: str | None = Cookie(default=None)):
     data = await file.read()
     if len(data) > _MAX_BYTES:
         return JSONResponse(status_code=413, content={"error": "file too large"})
-    report = analyze(data, file.filename or "upload.bin", _options(intel))
+    opts = _options(intel)
+    if intel:
+        # Drive reputation lookups with the signed-in user's own keys.
+        from ..intel.providers import providers_for_keys
+        opts.intel_providers = providers_for_keys(_user_keys(requiem_session))
+    report = analyze(data, file.filename or "upload.bin", opts)
     return report.to_dict()
 
 

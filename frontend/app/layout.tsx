@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import { InvestigationProvider } from "@/lib/investigation";
+import { AuthProvider } from "@/lib/auth";
 import { NavBar } from "@/components/NavBar";
 
 export const metadata: Metadata = {
@@ -17,12 +18,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <InvestigationProvider>
-          <NavBar />
-          <main className="wrap" style={{ paddingBottom: 80 }}>
-            {children}
-          </main>
-        </InvestigationProvider>
+        <AuthProvider>
+          <InvestigationProvider>
+            <NavBar />
+            <main className="wrap" style={{ paddingBottom: 80 }}>
+              {children}
+            </main>
+          </InvestigationProvider>
+        </AuthProvider>
       </body>
     </html>
   );

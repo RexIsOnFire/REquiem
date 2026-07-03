@@ -13,6 +13,11 @@ fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9 # required by FastAPI for file uploads
 
+# --- Auth (multi-user accounts + encrypted per-user API keys) ---
+PyJWT>=2.8.0            # session tokens
+cryptography>=42.0.0   # Fernet encryption of stored keys
+# (password hashing uses stdlib hashlib.scrypt; SQLite is stdlib)
+
 # --- PDF report export (pick ONE; both optional) ---
 # playwright is the most reliable cross-platform choice (esp. Windows):
 #     pip install playwright && playwright install chromium

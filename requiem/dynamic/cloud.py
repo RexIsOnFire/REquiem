@@ -83,3 +83,18 @@ def default_cloud_providers(offline: bool = False) -> list[CloudBehaviorProvider
         from .hybrid import HybridAnalysisProvider
         providers.append(HybridAnalysisProvider())
     return providers
+
+
+def cloud_providers_for_keys(keys: dict[str, str]) -> list[CloudBehaviorProvider]:
+    """Build cloud-behavior providers from an explicit per-user key set."""
+    providers: list[CloudBehaviorProvider] = []
+    if keys.get("TRIAGE_TOKEN"):
+        from .triage import TriageBackend
+        providers.append(TriageBackend(token=keys["TRIAGE_TOKEN"]))
+    if keys.get("VT_API_KEY"):
+        from ..intel.vt_behavior import VTBehaviorProvider
+        providers.append(VTBehaviorProvider(api_key=keys["VT_API_KEY"]))
+    if keys.get("HYBRIDANALYSIS_API_KEY"):
+        from .hybrid import HybridAnalysisProvider
+        providers.append(HybridAnalysisProvider(api_key=keys["HYBRIDANALYSIS_API_KEY"]))
+    return providers
