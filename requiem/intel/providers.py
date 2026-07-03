@@ -136,3 +136,17 @@ def default_providers(offline: bool = False) -> list[IntelProvider]:
     if os.environ.get("VT_API_KEY"):
         providers.append(VirusTotalProvider())
     return providers
+
+
+def providers_for_keys(keys: dict[str, str]) -> list[IntelProvider]:
+    """Build the intel chain from an explicit per-user key set (multi-tenant).
+
+    Only providers with a usable key are included; nothing falls back to the
+    server environment, so one user never spends another's (or the host's) quota.
+    """
+    providers: list[IntelProvider] = []
+    if keys.get("MALWAREBAZAAR_API_KEY"):
+        providers.append(MalwareBazaarProvider(api_key=keys["MALWAREBAZAAR_API_KEY"]))
+    if keys.get("VT_API_KEY"):
+        providers.append(VirusTotalProvider(api_key=keys["VT_API_KEY"]))
+    return providers or [OfflineProvider()]

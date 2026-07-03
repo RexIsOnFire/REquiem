@@ -15,12 +15,13 @@ dependencies = []  # core is stdlib-only
 
 [project.optional-dependencies]
 static = ["pefile>=2023.2.7", "lief>=0.14.0", "yara-python>=4.3.0", "capstone>=5.0.0"]
-api = ["fastapi>=0.110.0", "uvicorn[standard]>=0.29.0", "python-multipart>=0.0.9"]
+api = ["fastapi>=0.110.0", "uvicorn[standard]>=0.29.0", "python-multipart>=0.0.9",
+       "PyJWT>=2.8.0", "cryptography>=42.0.0"]
 pdf = ["playwright>=1.44.0"]  # then: playwright install chromium
 dev = ["pytest>=8.0.0"]
 all = ["pefile>=2023.2.7", "lief>=0.14.0", "yara-python>=4.3.0", "capstone>=5.0.0",
        "fastapi>=0.110.0", "uvicorn[standard]>=0.29.0", "python-multipart>=0.0.9",
-       "playwright>=1.44.0", "pytest>=8.0.0"]
+       "PyJWT>=2.8.0", "cryptography>=42.0.0", "playwright>=1.44.0", "pytest>=8.0.0"]
 
 [project.scripts]
 requiem = "requiem.cli.__main__:main"

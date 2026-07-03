@@ -12,6 +12,11 @@ dist/
 .env.local
 !.env.example
 
+# User database + server secret (auth) — never commit
+data/
+*.db
+.secret
+
 # Never commit samples or generated reports
 samples/*
 !samples/.gitkeep
