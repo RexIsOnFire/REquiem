@@ -18,21 +18,21 @@ It doesn't just say *"this is ransomware."* It says:
 
 ## Highlights
 
-- 🧬 **Language & compiler fingerprinting** — Go, Rust, C#/.NET, C/C++
+-  **Language & compiler fingerprinting** — Go, Rust, C#/.NET, C/C++
   (MSVC/GCC/MinGW), Delphi, Nim, Python-frozen, AutoIt — with confidence + evidence.
-- 🔎 **Explainable verdicts** — every conclusion is a `Finding` carrying `Evidence`;
+-  **Explainable verdicts** — every conclusion is a `Finding` carrying `Evidence`;
   click any finding to see the proof.
-- 🗺️ **MITRE ATT&CK heatmap** — behavior inferred into 130+ techniques, rendered
+-  **MITRE ATT&CK heatmap** — behavior inferred into 130+ techniques, rendered
   as an interactive tactic × technique matrix.
-- 🧠 **Memory visualization** — address-space map (R/W/X, file-backed vs unbacked,
+-  **Memory visualization** — address-space map (R/W/X, file-backed vs unbacked,
   suspicious regions) + heap-growth timeline (the ransomware working-set story).
-- 🧩 **CFG disassembly** — Capstone recursive-descent **function recovery** from
+-  **CFG disassembly** — Capstone recursive-descent **function recovery** from
   exports/symbols + call targets; each function as a navigable control-flow graph.
-- ☁️ **Investigate by hash — no local sandbox** — paste a hash, get reputation
+-  **Investigate by hash — no local sandbox** — paste a hash, get reputation
   *and* real dynamic behavior (process tree, network, ATT&CK) pulled from existing
   cloud detonations. Ideal for a public deployment.
-- 📄 **PDF / HTML reports** — self-contained, print-optimized, one-click export.
-- 🛡️ **Safe by design** — static-first, metadata-only hash lookups; **samples are
+-  **PDF / HTML reports** — self-contained, print-optimized, one-click export.
+-  **Safe by design** — static-first, metadata-only hash lookups; **samples are
   never executed locally or redistributed.**
 
 ---
