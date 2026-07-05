@@ -54,7 +54,13 @@ email the maintainer. Do not file public issues for exploitable bugs.
 
 ### Rate limiting (per instance)
 - Register: 5/hour/IP. Login: 10/5min/IP **and** 5/5min/email (credential
-  stuffing). Hash lookup: 30/min. Investigate: 20/min.
+  stuffing). Hash lookup: 30/min. Investigate: 20/min. **Analysis endpoints
+  (`/analyze`, `/analyze/html`, `/analyze/pdf`, `/report/pdf`): 20/min** — so
+  anonymous callers can't exhaust CPU with the heavy pipeline.
+- **X-Forwarded-For is not trusted by default.** The rate-limit key uses the
+  direct peer IP unless `REQUIEM_TRUSTED_PROXIES=N` is set, in which case the
+  client is read N hops from the right of XFF — an unforgeable position behind
+  exactly N trusted proxies. This prevents rate-limit bypass via a spoofed XFF.
 
 ### Authorization & SSRF
 - Per-user API keys are **always scoped to the session user id** — no

@@ -37,6 +37,10 @@ services:
         value: "1"
       - key: REQUIEM_COOKIE_SAMESITE
         value: none
+      # Render terminates TLS at one proxy hop; trust exactly one so rate-limit
+      # keying uses the real client IP (and can't be spoofed via X-Forwarded-For).
+      - key: REQUIEM_TRUSTED_PROXIES
+        value: "1"
       # Exact origins allowed to send credentialed requests. Set to your
       # frontend URL after the first deploy (Render assigns it).
       - key: REQUIEM_ALLOWED_ORIGINS

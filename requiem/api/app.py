@@ -113,6 +113,14 @@ def _safe_filename(name: str | None, default: str = "report") -> str:
     return stem[:80]
 
 
+def _analyze_limit(request) -> JSONResponse | None:
+    """Throttle CPU-heavy analysis endpoints (anonymous-reachable)."""
+    if not _sec.rate_limiter.check("analyze", _sec.client_ip(request),
+                                   limit=20, window=60):
+        return JSONResponse(status_code=429, content={"error": "rate limited"})
+    return None
+
+
 @app.get("/healthz")
 def healthz():
     return {"status": "ok", "engine": "0.1.0"}
@@ -236,8 +244,12 @@ async def investigate_by_hash(request: Request, value: str,
 
 
 @app.post("/analyze")
-async def analyze_upload(file: UploadFile = File(...), intel: bool = Query(False),
+async def analyze_upload(request: Request, file: UploadFile = File(...),
+                         intel: bool = Query(False),
                          requiem_session: str | None = Cookie(default=None)):
+    limited = _analyze_limit(request)
+    if limited:
+        return limited
     data = await file.read()
     if len(data) > _MAX_BYTES:
         return JSONResponse(status_code=413, content={"error": "file too large"})
@@ -251,7 +263,10 @@ async def analyze_upload(file: UploadFile = File(...), intel: bool = Query(False
 
 
 @app.post("/analyze/html", response_class=HTMLResponse)
-async def analyze_upload_html(file: UploadFile = File(...), intel: bool = Query(False)):
+async def analyze_upload_html(request: Request, file: UploadFile = File(...),
+                              intel: bool = Query(False)):
+    if _analyze_limit(request):
+        return HTMLResponse(status_code=429, content="<h1>Rate limited</h1>")
     data = await file.read()
     if len(data) > _MAX_BYTES:
         return HTMLResponse(status_code=413, content="<h1>File too large</h1>")
@@ -273,6 +288,9 @@ async def report_pdf(request: Request, payload: dict = Body(...)):
     always uses the print-optimized HTML (not the live dark DOM). Never 500s:
     if PDF rendering isn't available on the host, returns the print-ready HTML."""
     from ..core.models import AnalysisReport
+
+    if _analyze_limit(request):
+        return JSONResponse(status_code=429, content={"error": "rate limited"})
 
     # Bound the JSON body to prevent memory-exhaustion via a huge report blob.
     clen = request.headers.get("content-length")
@@ -296,7 +314,10 @@ async def report_pdf(request: Request, payload: dict = Body(...)):
 
 
 @app.post("/analyze/pdf")
-async def analyze_upload_pdf(file: UploadFile = File(...), intel: bool = Query(False)):
+async def analyze_upload_pdf(request: Request, file: UploadFile = File(...),
+                             intel: bool = Query(False)):
+    if _analyze_limit(request):
+        return JSONResponse(status_code=429, content={"error": "rate limited"})
     data = await file.read()
     if len(data) > _MAX_BYTES:
         return JSONResponse(status_code=413, content={"error": "file too large"})

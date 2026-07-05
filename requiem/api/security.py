@@ -111,10 +111,26 @@ rate_limiter = RateLimiter()
 
 
 def client_ip(request) -> str:
-    # Render/most proxies set X-Forwarded-For; take the first hop.
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
+    """Best-effort client IP for rate limiting.
+
+    X-Forwarded-For is client-spoofable (the client controls the left entries),
+    so we only consult it when explicitly behind a known number of trusted
+    proxies (REQUIEM_TRUSTED_PROXIES, default 0 = don't trust XFF). We then take
+    the entry that many hops from the RIGHT — the address the outermost trusted
+    proxy observed — which a client cannot forge. Otherwise use the direct peer.
+    """
+    try:
+        trusted = int(os.environ.get("REQUIEM_TRUSTED_PROXIES", "0"))
+    except ValueError:
+        trusted = 0
+    if trusted > 0:
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            hops = [h.strip() for h in xff.split(",") if h.strip()]
+            # The real client is `trusted` positions from the right end.
+            idx = len(hops) - trusted
+            if 0 <= idx < len(hops):
+                return hops[idx]
     return request.client.host if request.client else "unknown"
 
 
