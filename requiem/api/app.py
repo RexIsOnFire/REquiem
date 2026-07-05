@@ -72,8 +72,10 @@ app.add_middleware(_CSRFGuard)
 @app.exception_handler(Exception)
 async def _unhandled(request, exc):
     # Never leak stack traces or internal messages to clients. Log server-side.
+    # Strip CR/LF from the path to prevent log-forging injection.
     import logging
-    logging.getLogger("requiem").exception("unhandled error on %s", request.url.path)
+    safe_path = str(request.url.path).replace("\r", "").replace("\n", "")[:200]
+    logging.getLogger("requiem").exception("unhandled error on %s", safe_path)
     return JSONResponse(status_code=500, content={"error": "internal server error"})
 
 

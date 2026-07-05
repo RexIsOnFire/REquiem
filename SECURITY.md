@@ -56,8 +56,22 @@ email the maintainer. Do not file public issues for exploitable bugs.
 - Register: 5/hour/IP. Login: 10/5min/IP **and** 5/5min/email (credential
   stuffing). Hash lookup: 30/min. Investigate: 20/min.
 
+### Authorization & SSRF
+- Per-user API keys are **always scoped to the session user id** — no
+  user-supplied identifier, so there is no IDOR handle.
+- URL-valued keys (`CAPE_URL`) are **SSRF-validated**: http(s) only, and the
+  host must not resolve to a private/loopback/link-local/reserved address or a
+  cloud-metadata endpoint (`169.254.169.254`, `metadata.google.internal`).
+- All external-API hosts (VirusTotal/MalwareBazaar/Hybrid Analysis/Triage) are
+  **hardcoded**; only a format-validated hash is interpolated into the path.
+
 ### Injection & memory safety
 - All SQL is **parameterized** (no string building).
+- **Parsers are fuzz-hardened**: 80+ malformed/random PE/ELF inputs (max section
+  counts, huge size claims, truncated headers, pure garbage) produce zero
+  crashes and zero slowdowns.
+- Log messages strip CR/LF (no log-forging); no emails/passwords/keys/tokens are
+  ever logged.
 - The HTML report **escapes all binary-derived data** (mnemonics, operands,
   strings, IOCs, filenames) with `html.escape(quote=True)`.
 - IOC/string extraction regexes are **linear** — no ReDoS on pathological input
