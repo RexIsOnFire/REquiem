@@ -100,3 +100,41 @@ def test_login_rate_limited_per_ip(client):
                          json={"email": "u@x.com", "password": "wrong-Pass1!"}).status_code
              for _ in range(12)]
     assert 429 in codes
+
+
+# --- SSRF on URL keys ----------------------------------------------------
+def test_cape_url_ssrf_blocked(client):
+    client.post("/auth/register", json={"email": "u@x.com", "password": _STRONG})
+    # Cloud metadata endpoint -> blocked.
+    r = client.put("/keys", json={"name": "CAPE_URL", "value": "http://169.254.169.254/"})
+    assert r.status_code == 400
+    # Loopback -> blocked.
+    r = client.put("/keys", json={"name": "CAPE_URL", "value": "http://127.0.0.1:8080"})
+    assert r.status_code == 400
+
+
+# --- parser robustness (fuzz) -------------------------------------------
+def test_parser_never_crashes_on_garbage():
+    import random
+    from requiem import analyze, PipelineOptions
+    opts = PipelineOptions(run_intel=False)
+    random.seed(0)
+    for i in range(40):
+        data = bytes(random.randrange(256) for _ in range(random.randrange(10, 3000)))
+        analyze(data, f"f{i}.bin", opts)  # must not raise
+    # Malformed PE headers.
+    analyze(b"MZ" + b"\xff" * 300, "x.exe", opts)
+    analyze(b"\x7fELF" + b"\xff" * 200, "x.elf", opts)
+
+
+# --- IDOR: keys are always scoped to the session user -------------------
+def test_keys_scoped_to_user(client):
+    from fastapi.testclient import TestClient
+    from requiem.api.app import app
+    # user A saves a key
+    client.post("/auth/register", json={"email": "a@x.com", "password": _STRONG})
+    client.put("/keys", json={"name": "VT_API_KEY", "value": "aaa111bbb222"})
+    # a fresh client (user B) sees no keys — no shared state, no IDOR handle
+    other = TestClient(app, headers={"X-Requested-With": "fetch"})
+    other.post("/auth/register", json={"email": "b@x.com", "password": _STRONG})
+    assert other.get("/keys").json()["status"]["VT_API_KEY"] is False

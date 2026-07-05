@@ -144,6 +144,35 @@ def list_keys(requiem_session: str | None = Cookie(default=None)):
 # API-key values may contain only these characters (all real keys/URLs do).
 _KEY_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/\-]*$")
 
+# Keys that hold a URL must pass SSRF validation (public https host only).
+_URL_KEYS = {"CAPE_URL"}
+
+
+def _validate_url_value(value: str) -> None:
+    """Reject non-HTTPS, and hosts that resolve to private/loopback/link-local
+    or cloud-metadata addresses (SSRF defense-in-depth)."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="URL must be http(s) with a host")
+    host = parsed.hostname
+    # Block the cloud metadata endpoints outright.
+    if host in ("169.254.169.254", "metadata.google.internal", "metadata"):
+        raise HTTPException(status_code=400, detail="URL host not allowed")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        raise HTTPException(status_code=400, detail="URL host does not resolve")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            raise HTTPException(status_code=400,
+                                detail="URL resolves to a non-public address")
+
 
 @router.put("/keys")
 def set_key(requiem_session: str | None = Cookie(default=None),
@@ -156,6 +185,8 @@ def set_key(requiem_session: str | None = Cookie(default=None),
         raise HTTPException(status_code=400, detail="value too long")
     if value and not _KEY_VALUE_RE.match(value):
         raise HTTPException(status_code=400, detail="value contains invalid characters")
+    if value and name in _URL_KEYS:
+        _validate_url_value(value)
     get_store().set_key(user.id, name, value)
     return {"status": get_store().key_status(user.id)}
 
