@@ -26,3 +26,4 @@ samples/*
 report*.html
 report*.json
 *.local
+how --format*

@@ -57,7 +57,25 @@ class _SecurityHeaders(BaseHTTPMiddleware):
         return resp
 
 
+class _CSRFGuard(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if not _sec.csrf_ok(request):
+            return JSONResponse(status_code=403,
+                                content={"error": "CSRF check failed"})
+        return await call_next(request)
+
+
 app.add_middleware(_SecurityHeaders)
+app.add_middleware(_CSRFGuard)
+
+
+@app.exception_handler(Exception)
+async def _unhandled(request, exc):
+    # Never leak stack traces or internal messages to clients. Log server-side.
+    import logging
+    logging.getLogger("requiem").exception("unhandled error on %s", request.url.path)
+    return JSONResponse(status_code=500, content={"error": "internal server error"})
+
 
 from .auth_routes import router as auth_router, current_user  # noqa: E402
 app.include_router(auth_router)
