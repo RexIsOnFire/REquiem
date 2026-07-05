@@ -13,6 +13,7 @@ export async function analyzeFile(
     method: "POST",
     body: form,
     credentials: "same-origin",
+    headers: { "X-Requested-With": "fetch" }, // CSRF guard (multipart)
   });
   if (!res.ok) {
     throw new Error(`Analysis failed (${res.status}): ${await safeText(res)}`);
@@ -59,7 +60,11 @@ export const login = (email: string, password: string) =>
   authPost("/auth/login", { email, password });
 
 export async function logout(): Promise<void> {
-  await fetch(`${BASE}/auth/logout`, { method: "POST", credentials: "same-origin" });
+  await fetch(`${BASE}/auth/logout`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "X-Requested-With": "fetch" },
+  });
 }
 
 export async function me(): Promise<AuthUser | null> {
@@ -142,6 +147,8 @@ export async function downloadPdf(
   const res = await fetch(`${BASE}/analyze/pdf?intel=${intel}`, {
     method: "POST",
     body: form,
+    credentials: "same-origin",
+    headers: { "X-Requested-With": "fetch" },
   });
   if (!res.ok) throw new Error(`PDF request failed (${res.status})`);
   if (res.headers.get("X-ReQuiem-PDF") === "unavailable-html-fallback") {

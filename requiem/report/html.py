@@ -398,7 +398,7 @@ footer{{margin-top:40px;color:var(--mut);font-size:12px;border-top:1px solid var
   .no-print{{display:none !important}}
 }}
 </style></head><body>
-<div class="pdfbar no-print"><button onclick="window.print()">⬇ Save as PDF</button></div>
+<div class="pdfbar no-print"><span class="hint">Press Ctrl/Cmd&nbsp;+&nbsp;P to save as PDF</span></div>
 <div class="wrap">
 <h1>ReQuiem <span class="muted">· Malware Analysis Report</span></h1>
 <div class="banner">

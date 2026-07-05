@@ -1,0 +1,96 @@
+# Security
+
+ReQuiem is a security tool, so its own posture matters. This document records
+the controls in place and the results of the internal security assessment.
+
+## Reporting a vulnerability
+
+Please open a private security advisory on GitHub (Security → Advisories) or
+email the maintainer. Do not file public issues for exploitable bugs.
+
+## Controls in place
+
+### Authentication & sessions
+- Passwords hashed with **scrypt** (memory-hard, per-user salt); never stored
+  or logged in plaintext.
+- **Login is constant-time w.r.t. account existence** — a scrypt hash runs even
+  for unknown emails, defeating timing-based user enumeration.
+- Sessions are **signed JWTs (HS256)** in an **HttpOnly** cookie (JS cannot read
+  it → XSS cannot exfiltrate it).
+- JWT verification **pins the algorithm** and **requires `exp`, `iat`, `nbf`,
+  `sub`, `iss`** — rejecting `alg=none`, non-expiring, and issuer-spoofed tokens.
+- Cookie flags adapt to the deployment: `Secure` + `SameSite=None` for
+  cross-origin HTTPS, `SameSite=Lax` for same-origin.
+
+### Per-user secrets
+- Each user's API keys are **encrypted at rest** (Fernet / AES-128-CBC+HMAC)
+  with a server key derived from `REQUIEM_SECRET`. A DB leak yields ciphertext.
+- Key values are **write-only** over the API — you can set them and see which
+  are set, but never read them back.
+
+### Transport & browser hardening
+- **CORS allowlist** (`REQUIEM_ALLOWED_ORIGINS`) for credentialed requests.
+- **CSRF protection**: state-changing requests must be JSON (forces a CORS
+  preflight) or carry `X-Requested-With` — an HTML `<form>` can do neither
+  cross-origin.
+- **Security headers on every response**: `Content-Security-Policy`
+  (`script-src 'none'`, `default-src 'none'`, `frame-ancestors 'none'`),
+  `Strict-Transport-Security`, `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+  `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`,
+  `Permissions-Policy`.
+- The self-contained HTML report carries **no inline scripts or event handlers**
+  (CSP-clean).
+
+### Input validation
+- **Email**: strict pattern + length cap (254).
+- **Password**: ≥10 chars, ≥3 character classes, length cap.
+- **Hashes**: must be exactly MD5/SHA1/SHA256 hex before any external call —
+  blocks SSRF/injection via the path segment.
+- **API-key values**: charset-restricted, length-capped.
+- **Filenames** in `Content-Disposition` are sanitized (no CR/LF/quotes/path
+  separators → no header injection or traversal).
+- **Body/upload size caps**: 32 MB samples, 8 MB report JSON.
+
+### Rate limiting (per instance)
+- Register: 5/hour/IP. Login: 10/5min/IP **and** 5/5min/email (credential
+  stuffing). Hash lookup: 30/min. Investigate: 20/min.
+
+### Injection & memory safety
+- All SQL is **parameterized** (no string building).
+- The HTML report **escapes all binary-derived data** (mnemonics, operands,
+  strings, IOCs, filenames) with `html.escape(quote=True)`.
+- IOC/string extraction regexes are **linear** — no ReDoS on pathological input
+  (validated: 5 MB adversarial input processes in < 0.3s).
+- Errors return a generic message; **no stack traces or internals** leak to
+  clients (global exception handler logs server-side only).
+
+### Safe by design
+- Samples are **never executed locally** and **never redistributed/downloaded**.
+- Dynamic behavior comes from a sandbox the operator controls, or an *existing*
+  hosted cloud report (VirusTotal / Hybrid Analysis / Triage) — by hash only.
+
+## Deployment hardening (production)
+
+Set these on the API service:
+
+```
+REQUIEM_SECRET=<long random value>          # signs tokens, encrypts keys
+REQUIEM_COOKIE_SECURE=1                       # HTTPS-only cookie
+REQUIEM_COOKIE_SAMESITE=none                  # cross-origin frontend/api
+REQUIEM_ALLOWED_ORIGINS=https://your-frontend # exact origin(s)
+REQUIEM_DATA_DIR=/var/requiem-data            # persistent disk for the DB
+```
+
+The included `render.yaml` sets all of these.
+
+## Known residual items
+
+- **Rate limiting is per-instance (in-memory).** For multi-instance
+  deployments, back it with Redis.
+- **Next.js**: pinned to the latest patched 14.2.x. Two advisories remain that
+  are only fully resolved in Next 15; both concern features ReQuiem does not use
+  (image-optimizer remote patterns, insecure RSC/Server Actions), so they are
+  not exploitable here.
+- **JWTs are not individually revocable** before expiry (7-day TTL). Rotating
+  `REQUIEM_SECRET` invalidates all sessions if needed.

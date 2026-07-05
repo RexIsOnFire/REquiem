@@ -18,6 +18,11 @@ from pathlib import Path
 
 from .crypto import SecretBox, hash_password, verify_password
 
+# A real scrypt hash of a random string, computed once at import. Used to run a
+# constant-cost password check when the email doesn't exist, so login timing
+# never reveals whether an account is registered.
+_DUMMY_HASH = hash_password("requiem-nonexistent-user-timing-guard")
+
 # API key names a user may store (the intel/cloud integrations).
 ALLOWED_KEYS = (
     "VT_API_KEY",
@@ -99,7 +104,12 @@ class Store:
         email = email.strip().lower()
         with self._conn() as c:
             row = c.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-        if not row or not verify_password(password, row["password_hash"]):
+        # Always perform a password hash, even when the user doesn't exist, so
+        # response time doesn't reveal whether an email is registered
+        # (defeats timing-based user enumeration).
+        stored = row["password_hash"] if row else _DUMMY_HASH
+        ok = verify_password(password, stored)
+        if not row or not ok:
             return None
         return User(id=row["id"], email=row["email"], created_at=row["created_at"])
 

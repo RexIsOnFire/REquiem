@@ -54,12 +54,13 @@ def allowed_origins() -> list[str]:
 _CSP = (
     "default-src 'none'; "
     "img-src 'self' data:; "
-    "style-src 'self' 'unsafe-inline'; "
-    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "  # self-contained report uses inline CSS
+    "script-src 'none'; "                  # API HTML carries NO scripts
     "font-src 'self' data:; "
     "connect-src 'self'; "
     "base-uri 'none'; "
     "form-action 'self'; "
+    "object-src 'none'; "
     "frame-ancestors 'none'"
 )
 
@@ -115,3 +116,24 @@ def client_ip(request) -> str:
     if xff:
         return xff.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+
+# --- CSRF protection -----------------------------------------------------
+# With SameSite=None (cross-origin deploys) the session cookie rides cross-site
+# requests, so we need CSRF defense. Strategy: every state-changing request must
+# either (a) be JSON (forces a CORS preflight that our allowlist controls) or
+# (b) carry X-Requested-With: fetch. HTML <form> CSRF can do neither against a
+# cross-origin target, and multipart uploads must add the header. Same-origin
+# GET/HEAD/OPTIONS are exempt (safe methods).
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def csrf_ok(request) -> bool:
+    if request.method in _SAFE_METHODS:
+        return True
+    ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if ctype == "application/json":
+        return True
+    if request.headers.get("x-requested-with", "").lower() in ("fetch", "xmlhttprequest"):
+        return True
+    return False

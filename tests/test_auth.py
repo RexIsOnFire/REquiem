@@ -88,7 +88,9 @@ def client(monkeypatch, tmp_path):
     from requiem.auth import store as store_mod
     monkeypatch.setattr(store_mod, "_store", Store(db_path=tmp_path / "api.db"))
     from requiem.api.app import app
-    return TestClient(app)
+    # Mirror the real frontend: send the CSRF header so state-changing requests
+    # pass the CSRF guard (JSON also triggers a preflight in browsers).
+    return TestClient(app, headers={"X-Requested-With": "fetch"})
 
 
 _STRONG = "Str0ng!Passw0rd"  # meets the 3-char-class, ≥10 policy
