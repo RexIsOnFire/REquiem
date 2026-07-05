@@ -1,0 +1,61 @@
+# Render Blueprint for ReQuiem — a backend API service + a frontend web service.
+# Deploy: push to GitHub, then "New +" → "Blueprint" and point at this repo.
+#
+# Fixes the hosted-deploy issues:
+#   - PDF: build installs WeasyPrint system libs + a Python renderer (no Chromium
+#     needed), so /report/pdf produces real PDFs.
+#   - Auth persistence: a mounted DISK holds the SQLite DB across restarts.
+#   - Cross-origin cookies: SameSite=None; Secure + CORS allowlist so login
+#     survives navigation between the frontend and API origins.
+
+services:
+  # ---------------- Backend API ----------------
+  - type: web
+    name: requiem-api
+    runtime: python
+    plan: starter                     # free tier has no persistent disk
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -e ".[all]"
+    startCommand: uvicorn requiem.api.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    disk:
+      name: requiem-data
+      mountPath: /var/requiem-data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      # Persist users + encrypted keys on the mounted disk.
+      - key: REQUIEM_DATA_DIR
+        value: /var/requiem-data
+      # Strong server secret for signing tokens + encrypting stored keys.
+      - key: REQUIEM_SECRET
+        generateValue: true
+      # HTTPS + cross-origin cookies between the web and api services.
+      - key: REQUIEM_COOKIE_SECURE
+        value: "1"
+      - key: REQUIEM_COOKIE_SAMESITE
+        value: none
+      # Exact origins allowed to send credentialed requests. Set to your
+      # frontend URL after the first deploy (Render assigns it).
+      - key: REQUIEM_ALLOWED_ORIGINS
+        sync: false
+
+  # ---------------- Frontend (Next.js) ----------------
+  - type: web
+    name: requiem-web
+    runtime: node
+    plan: starter
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # The Next rewrite proxy forwards /api/* to the backend service.
+      - key: NEXT_PUBLIC_API_BASE
+        fromService:
+          name: requiem-api
+          type: web
+          property: hostport

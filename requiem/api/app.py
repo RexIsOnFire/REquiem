@@ -23,20 +23,48 @@ from ..report import html
 from ..report import pdf as pdf_report
 
 try:
-    from fastapi import FastAPI, File, UploadFile, Query, Body, Cookie
+    from fastapi import FastAPI, File, UploadFile, Query, Body, Cookie, Request
     from fastapi.responses import HTMLResponse, JSONResponse, Response
     from fastapi.concurrency import run_in_threadpool
+    from fastapi.middleware.cors import CORSMiddleware
+    from starlette.middleware.base import BaseHTTPMiddleware
 except Exception as exc:  # pragma: no cover
     raise SystemExit("FastAPI not installed. `pip install fastapi uvicorn` to use the API.") from exc
+
+from . import security as _sec
 
 app = FastAPI(title="ReQuiem", version="0.1.0",
               description="All-in-one malware analysis workbench")
 
+# CORS: only explicitly allowed origins may make credentialed (cookie) requests.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_sec.allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+    max_age=600,
+)
+
+
+class _SecurityHeaders(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        resp = await call_next(request)
+        is_https = request.url.scheme == "https" or \
+            request.headers.get("x-forwarded-proto") == "https"
+        for k, v in _sec.security_headers(is_https).items():
+            resp.headers.setdefault(k, v)
+        return resp
+
+
+app.add_middleware(_SecurityHeaders)
+
 from .auth_routes import router as auth_router, current_user  # noqa: E402
 app.include_router(auth_router)
 
-# Cap upload size to keep a demo instance safe (100 MB).
-_MAX_BYTES = 100 * 1024 * 1024
+# Cap upload / request-body size to keep a demo instance safe.
+_MAX_BYTES = 32 * 1024 * 1024          # samples: 32 MB
+_MAX_JSON_BYTES = 8 * 1024 * 1024      # report/pdf JSON: 8 MB
 
 
 def _user_keys(session: str | None) -> dict[str, str]:
@@ -50,6 +78,19 @@ def _user_keys(session: str | None) -> dict[str, str]:
 
 def _options(intel: bool) -> PipelineOptions:
     return PipelineOptions(run_intel=intel, offline_intel=not intel)
+
+
+import re as _re
+
+_FILENAME_SAFE = _re.compile(r"[^A-Za-z0-9._\-]")
+
+
+def _safe_filename(name: str | None, default: str = "report") -> str:
+    """Sanitize a filename for a Content-Disposition header (no CR/LF/quotes/
+    path separators — blocks header injection and path traversal)."""
+    stem = (name or default).rsplit(".", 1)[0]
+    stem = _FILENAME_SAFE.sub("_", stem).strip("._") or default
+    return stem[:80]
 
 
 @app.get("/healthz")
@@ -81,9 +122,20 @@ def attack_matrix():
     }
 
 
+# A hash must be exactly MD5 (32) / SHA1 (40) / SHA256 (64) hex — nothing else
+# is ever sent to external APIs (blocks SSRF / injection via the path segment).
+_HASH_RE = _re.compile(r"^[A-Fa-f0-9]{32}$|^[A-Fa-f0-9]{40}$|^[A-Fa-f0-9]{64}$")
+
+
+def _valid_hash(value: str) -> bool:
+    return bool(_HASH_RE.match(value or ""))
+
+
 @app.get("/hash/{value}")
-def hash_lookup(value: str, online: bool = Query(False),
+def hash_lookup(request: Request, value: str, online: bool = Query(False),
                 requiem_session: str | None = Cookie(default=None)):
+    if not _valid_hash(value):
+        return JSONResponse(status_code=400, content={"error": "invalid hash format"})
     if online:
         from ..intel.providers import providers_for_keys
         user = current_user(requiem_session)
@@ -91,6 +143,9 @@ def hash_lookup(value: str, online: bool = Query(False),
             return JSONResponse(status_code=401, content={
                 "error": "Sign in for online lookups.",
             })
+        if not _sec.rate_limiter.check("lookup", _sec.client_ip(request),
+                                       limit=30, window=60):
+            return JSONResponse(status_code=429, content={"error": "rate limited"})
         from ..auth.store import get_store
         keys = get_store().get_keys(user.id)
         if not keys:
@@ -100,16 +155,17 @@ def hash_lookup(value: str, online: bool = Query(False),
         providers = providers_for_keys(keys)
     else:
         providers = default_providers(offline=True)
-    results = gather_intel(providers, sha256=value, md5=None, sha1=None)
+    results = gather_intel(providers, sha256=value.lower(), md5=None, sha1=None)
     return {
-        "hash": value,
+        "hash": value.lower(),
         "note": "Metadata lookup only — ReQuiem never downloads sample binaries.",
         "results": [r.__dict__ for r in results],
     }
 
 
 @app.get("/investigate/{value}")
-async def investigate_by_hash(value: str, requiem_session: str | None = Cookie(default=None)):
+async def investigate_by_hash(request: Request, value: str,
+                              requiem_session: str | None = Cookie(default=None)):
     """Full by-hash investigation with **no upload and no local sandbox**:
     reputation intel + any *existing* cloud detonation (Triage / VirusTotal /
     Hybrid Analysis) mapped into behavior + inferred ATT&CK. Uses the logged-in
@@ -120,11 +176,17 @@ async def investigate_by_hash(value: str, requiem_session: str | None = Cookie(d
     from ..attack.inference import run_inference
     from ..core.models import AnalysisReport, FileIdentity, DynamicBehavior
 
+    if not _valid_hash(value):
+        return JSONResponse(status_code=400, content={"error": "invalid hash format"})
+    value = value.lower()
     user = current_user(requiem_session)
     if user is None:
         return JSONResponse(status_code=401, content={
             "error": "Sign in to investigate by hash.",
         })
+    if not _sec.rate_limiter.check("investigate", _sec.client_ip(request),
+                                   limit=20, window=60):
+        return JSONResponse(status_code=429, content={"error": "rate limited"})
     from ..auth.store import get_store
     keys = get_store().get_keys(user.id)
     if not keys:
@@ -185,16 +247,28 @@ def pdf_available():
 
 
 @app.post("/report/pdf")
-async def report_pdf(payload: dict = Body(...)):
+async def report_pdf(request: Request, payload: dict = Body(...)):
     """Render a PDF from an already-computed report (from /analyze or
     /investigate). Works for uploads AND hash investigations — no file needed,
-    always uses the print-optimized HTML (not the live dark DOM)."""
+    always uses the print-optimized HTML (not the live dark DOM). Never 500s:
+    if PDF rendering isn't available on the host, returns the print-ready HTML."""
     from ..core.models import AnalysisReport
-    report = AnalysisReport.from_dict(payload)
-    stem = (report.identity.filename or "report").rsplit(".", 1)[0].strip("… ") or "report"
+
+    # Bound the JSON body to prevent memory-exhaustion via a huge report blob.
+    clen = request.headers.get("content-length")
+    if clen and clen.isdigit() and int(clen) > _MAX_JSON_BYTES:
+        return JSONResponse(status_code=413, content={"error": "report too large"})
+
+    try:
+        report = AnalysisReport.from_dict(payload)
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "invalid report payload"})
+
+    stem = _safe_filename(report.identity.filename)
     try:
         pdf_bytes = await run_in_threadpool(pdf_report.render_pdf, report)
-    except pdf_report.PDFUnavailable:
+    except Exception:
+        # PDFUnavailable OR any runtime render failure -> print-ready HTML.
         return HTMLResponse(html.render(report),
                             headers={"X-ReQuiem-PDF": "unavailable-html-fallback"})
     return Response(content=pdf_bytes, media_type="application/pdf",
@@ -207,14 +281,13 @@ async def analyze_upload_pdf(file: UploadFile = File(...), intel: bool = Query(F
     if len(data) > _MAX_BYTES:
         return JSONResponse(status_code=413, content={"error": "file too large"})
     report = analyze(data, file.filename or "upload.bin", _options(intel))
-    stem = (file.filename or "report").rsplit(".", 1)[0]
+    stem = _safe_filename(file.filename)
     try:
         # PDF backends (Playwright sync API, WeasyPrint) are blocking and must
         # not run on the event loop — offload to a worker thread.
         pdf_bytes = await run_in_threadpool(pdf_report.render_pdf, report)
-    except pdf_report.PDFUnavailable:
-        # Graceful fallback: return the print-ready HTML with a header the
-        # frontend can detect, so the user still gets a save-as-PDF path.
+    except Exception:
+        # PDFUnavailable OR any runtime render failure -> print-ready HTML.
         return HTMLResponse(
             html.render(report),
             headers={"X-ReQuiem-PDF": "unavailable-html-fallback"},

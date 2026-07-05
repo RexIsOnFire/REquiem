@@ -41,20 +41,28 @@ def available_backend() -> str | None:
 def render_pdf(report: AnalysisReport) -> bytes:
     """Render ``report`` to PDF bytes using the best available backend.
 
-    :raises PDFUnavailable: when neither WeasyPrint nor Playwright is installed.
+    Tries every installed backend in turn; if a backend is present but fails at
+    runtime (e.g. Chromium not installed on the host, missing system libs), it
+    moves on to the next. Only when *all* backends are unavailable/failed does it
+    raise :class:`PDFUnavailable`, so callers can fall back to HTML.
     """
     html = html_report.render(report)
-    backend = available_backend()
-    if backend == "weasyprint":
-        return _render_weasyprint(html)
-    if backend == "playwright":
-        return _render_playwright(html)
+    errors: list[str] = []
+
+    for name, fn in (("weasyprint", _render_weasyprint), ("playwright", _render_playwright)):
+        try:
+            data = fn(html)
+            if data and data[:4] == b"%PDF":
+                return data
+            errors.append(f"{name}: produced no PDF")
+        except Exception as exc:  # backend missing OR runtime failure
+            errors.append(f"{name}: {exc}")
+
     raise PDFUnavailable(
-        "No PDF backend installed. Install one of:\n"
-        "  pip install weasyprint            # pure-Python, recommended\n"
+        "PDF rendering unavailable. Install a backend:\n"
+        "  pip install weasyprint            # pure-Python, best for servers\n"
         "  pip install playwright && playwright install chromium\n"
-        "Meanwhile, use the print-ready HTML report (open it and choose "
-        "'Save as PDF')."
+        + ("Details: " + " | ".join(errors) if errors else "")
     )
 
 

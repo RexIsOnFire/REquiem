@@ -11,37 +11,58 @@ import type { AnalysisReport } from "@/lib/types";
 export function PdfButton({ report }: { report: AnalysisReport }) {
   const [busy, setBusy] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+
   async function download() {
     setBusy(true);
+    setError(null);
     try {
       const res = await fetch("/api/report/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(report),
+        credentials: "same-origin",
       });
+      // Server has no PDF engine (or it failed) -> it returns print-ready HTML.
       if (res.headers.get("X-ReQuiem-PDF") === "unavailable-html-fallback") {
+        openAndPrint(await res.text());
+        return;
+      }
+      if (!res.ok) {
+        setError(`PDF failed (${res.status})`);
+        return;
+      }
+      // Only treat as a PDF if the server actually sent one.
+      const ctype = res.headers.get("content-type") || "";
+      if (!ctype.includes("application/pdf")) {
         openAndPrint(await res.text());
         return;
       }
       const blob = await res.blob();
       const stem =
-        (report.identity.filename || "report").replace(/\.[^.]+$/, "").replace(/[…\s]/g, "") ||
-        "report";
+        (report.identity.filename || "report")
+          .replace(/\.[^.]+$/, "")
+          .replace(/[^A-Za-z0-9._-]/g, "") || "report";
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${stem}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
+    } catch {
+      setError("PDF request failed");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <button className="btn btn-ghost small" disabled={busy} onClick={download}>
-      {busy ? "Preparing…" : "⬇ Download PDF"}
-    </button>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <button className="btn btn-ghost small" disabled={busy} onClick={download}>
+        {busy ? "Preparing…" : "⬇ Download PDF"}
+      </button>
+      {error && <span className="small" style={{ color: "#fca5a5" }}>{error}</span>}
+    </span>
   );
 }
 

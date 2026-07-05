@@ -8,6 +8,15 @@ from requiem.auth import crypto, tokens
 from requiem.auth.store import Store
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    # The rate limiter is a process-global; clear it between tests so limits
+    # from one test don't bleed into the next.
+    from requiem.api import security
+    security.rate_limiter._hits.clear()
+    yield
+
+
 @pytest.fixture
 def store(tmp_path):
     return Store(db_path=tmp_path / "t.db")
@@ -82,34 +91,58 @@ def client(monkeypatch, tmp_path):
     return TestClient(app)
 
 
+_STRONG = "Str0ng!Passw0rd"  # meets the 3-char-class, ≥10 policy
+
+
 def test_register_login_me_flow(client):
-    r = client.post("/auth/register", json={"email": "u@x.com", "password": "password123"})
+    r = client.post("/auth/register", json={"email": "u@x.com", "password": _STRONG})
     assert r.status_code == 200
     assert client.get("/auth/me").json()["email"] == "u@x.com"
     client.post("/auth/logout")
     assert client.get("/auth/me").status_code == 401
     # Login again.
     assert client.post("/auth/login",
-                       json={"email": "u@x.com", "password": "password123"}).status_code == 200
+                       json={"email": "u@x.com", "password": _STRONG}).status_code == 200
 
 
 def test_register_validation(client):
+    # bad email
     assert client.post("/auth/register",
-                       json={"email": "bad", "password": "password123"}).status_code == 400
+                       json={"email": "bad", "password": _STRONG}).status_code == 400
+    # too short
     assert client.post("/auth/register",
                        json={"email": "u@x.com", "password": "short"}).status_code == 400
+    # long but too few character classes (all lowercase)
+    assert client.post("/auth/register",
+                       json={"email": "u2@x.com", "password": "abcdefghijkl"}).status_code == 400
 
 
 def test_keys_require_auth(client):
     assert client.get("/keys").status_code == 401
-    client.post("/auth/register", json={"email": "u@x.com", "password": "password123"})
-    r = client.put("/keys", json={"name": "VT_API_KEY", "value": "abc"})
+    client.post("/auth/register", json={"email": "u@x.com", "password": _STRONG})
+    r = client.put("/keys", json={"name": "VT_API_KEY", "value": "abc123def456"})
     assert r.status_code == 200
     assert r.json()["status"]["VT_API_KEY"] is True
+
+
+def test_key_value_validation(client):
+    client.post("/auth/register", json={"email": "u@x.com", "password": _STRONG})
+    # Invalid chars rejected.
+    assert client.put("/keys", json={"name": "VT_API_KEY",
+                                     "value": "bad key with spaces"}).status_code == 400
+    # Unknown key name rejected.
+    assert client.put("/keys", json={"name": "EVIL", "value": "x"}).status_code == 400
 
 
 def test_investigate_gates_on_auth_and_keys(client):
     h = "a" * 64
     assert client.get(f"/investigate/{h}").status_code == 401  # anon
-    client.post("/auth/register", json={"email": "u@x.com", "password": "password123"})
+    client.post("/auth/register", json={"email": "u@x.com", "password": _STRONG})
     assert client.get(f"/investigate/{h}").status_code == 400  # no keys
+
+
+def test_invalid_hash_rejected(client):
+    client.post("/auth/register", json={"email": "u@x.com", "password": _STRONG})
+    # Non-hex / wrong length -> 400 before any external call.
+    assert client.get("/investigate/not-a-hash").status_code == 400
+    assert client.get("/hash/xyz?online=false").status_code == 400
