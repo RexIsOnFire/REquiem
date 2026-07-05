@@ -9,6 +9,7 @@ disk. The DB path defaults to ``<repo>/data/requiem.db`` and is created lazily.
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -37,9 +38,18 @@ class User:
 
 class Store:
     def __init__(self, db_path: Path | None = None):
-        repo_root = Path(__file__).resolve().parents[2]
-        self.data_dir = (db_path.parent if db_path else repo_root / "data")
-        self.db_path = db_path or (self.data_dir / "requiem.db")
+        if db_path is None:
+            # REQUIEM_DATA_DIR lets a hosted deploy point at a PERSISTENT disk
+            # (e.g. Render disk mount) so users/keys survive restarts. Without
+            # it, data lands in <repo>/data — fine for local, but note that on
+            # ephemeral hosts (default Render) that dir is wiped on each deploy.
+            data_dir = os.environ.get("REQUIEM_DATA_DIR")
+            base = Path(data_dir) if data_dir else Path(__file__).resolve().parents[2] / "data"
+            self.data_dir = base
+            self.db_path = base / "requiem.db"
+        else:
+            self.data_dir = db_path.parent
+            self.db_path = db_path
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self.box = SecretBox(self.data_dir)
