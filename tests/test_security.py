@@ -127,6 +127,33 @@ def test_parser_never_crashes_on_garbage():
     analyze(b"\x7fELF" + b"\xff" * 200, "x.elf", opts)
 
 
+# --- anonymous analysis rate limiting -----------------------------------
+def test_analyze_rate_limited(client):
+    import struct
+    mz = b"MZ" + b"\x00" * 0x3a + struct.pack("<I", 0x80)
+    mz += b"\x00" * (0x80 - len(mz))
+    coff = struct.pack("<H H I I I H H", 0x8664, 1, 0, 0, 0, 0xE0, 0x22)
+    opt = (struct.pack("<H B B I I I I I", 0x20B, 14, 0, 0x400, 0, 0, 0x1000, 0)
+           + struct.pack("<Q", 0x140000000) + struct.pack("<I I", 0x1000, 0x200))
+    opt += b"\x00" * (0xE0 - len(opt))
+    pe = mz + b"PE\x00\x00" + coff + opt + b"\x00" * 100
+    codes = [client.post("/analyze",
+                         files={"file": ("s.exe", pe, "application/octet-stream")}).status_code
+             for _ in range(25)]
+    assert 429 in codes
+
+
+def test_xff_spoof_does_not_bypass_rate_limit(client, monkeypatch):
+    # With XFF untrusted (default), a per-request forged X-Forwarded-For must
+    # NOT create fresh rate-limit buckets.
+    monkeypatch.delenv("REQUIEM_TRUSTED_PROXIES", raising=False)
+    codes = [client.post("/auth/register",
+                         json={"email": f"z{i}@x.com", "password": _STRONG},
+                         headers={"X-Forwarded-For": f"9.9.9.{i}"}).status_code
+             for i in range(8)]
+    assert 429 in codes
+
+
 # --- IDOR: keys are always scoped to the session user -------------------
 def test_keys_scoped_to_user(client):
     from fastapi.testclient import TestClient
