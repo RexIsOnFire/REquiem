@@ -41,6 +41,13 @@ services:
       # keying uses the real client IP (and can't be spoofed via X-Forwarded-For).
       - key: REQUIEM_TRUSTED_PROXIES
         value: "1"
+      # Keep the interactive API docs / OpenAPI schema OFF in production.
+      - key: REQUIEM_ENABLE_DOCS
+        value: "0"
+      # Cap concurrent headless-Chromium PDF renders so a burst can't exhaust
+      # memory (raise if the instance has more RAM/CPU headroom).
+      - key: REQUIEM_PDF_CONCURRENCY
+        value: "2"
       # Exact origins allowed to send credentialed requests. Set to your
       # frontend URL after the first deploy (Render assigns it).
       - key: REQUIEM_ALLOWED_ORIGINS
