@@ -487,6 +487,30 @@ def test_password_nfc_nfd_equivalence():
     assert verify_password(nfd, hash_password(nfc)) is True
 
 
+# --- account-lockout DoS resistance -------------------------------------
+def test_failed_logins_do_not_lock_out_legit_user(client):
+    client.post("/auth/register", json={"email": "v@x.com", "password": _STRONG})
+    from requiem.api import security
+    security.rate_limiter._hits.clear()
+    # Several wrong-password attempts on the victim's email...
+    for _ in range(6):
+        client.post("/auth/login", json={"email": "v@x.com", "password": "Wrong-Pass1!"})
+    # ...must NOT block the victim's correct login (per-email budget is 20,
+    # counts failures only; per-IP is the real gate).
+    r = client.post("/auth/login", json={"email": "v@x.com", "password": _STRONG})
+    assert r.status_code == 200
+
+
+def test_rate_limiter_peek_does_not_consume():
+    from requiem.api.security import RateLimiter
+    rl = RateLimiter()
+    for _ in range(100):
+        assert rl.check("b", "c", limit=2, window=60, peek=True) is True  # never consumes
+    assert rl.check("b", "c", limit=2, window=60) is True
+    assert rl.check("b", "c", limit=2, window=60) is True
+    assert rl.check("b", "c", limit=2, window=60) is False  # now exhausted
+
+
 # --- IDOR: keys are always scoped to the session user -------------------
 def test_keys_scoped_to_user(client):
     from fastapi.testclient import TestClient

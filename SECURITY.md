@@ -75,8 +75,10 @@ email the maintainer. Do not file public issues for exploitable bugs.
 - **Body/upload size caps**: 32 MB samples, 8 MB report JSON.
 
 ### Rate limiting (per instance)
-- Register: 5/hour/IP. Login: 10/5min/IP **and** 5/5min/email (credential
-  stuffing). Hash lookup: 30/min. Investigate: 20/min. **Analysis endpoints
+- Register: 5/hour/IP. Login: **10/5min per IP** is the primary brute-force gate;
+  a per-email budget (20 failures/15min) counts **failed attempts only**, so an
+  attacker who knows a victim's email cannot lock the victim out — a correct
+  login is never blocked by the per-email bucket. Hash lookup: 30/min. Investigate: 20/min. **Analysis endpoints
   (`/analyze`, `/analyze/html`, `/analyze/pdf`, `/report/pdf`): 20/min** — so
   anonymous callers can't exhaust CPU with the heavy pipeline.
 - **X-Forwarded-For is not trusted by default.** The rate-limit key uses the
