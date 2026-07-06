@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 import time
-from collections import defaultdict, deque
+from collections import deque
 
 # --- cookie policy -------------------------------------------------------
 def cookie_kwargs() -> dict:
@@ -90,14 +90,36 @@ class RateLimiter:
     swap for Redis. Intentionally tiny and dependency-free.
     """
 
+    # Hard cap on tracked keys so an attacker can't exhaust memory by flooding
+    # the per-email bucket with millions of unique addresses.
+    _MAX_KEYS = 100_000
+
     def __init__(self):
-        self._hits: dict[tuple[str, str], deque] = defaultdict(deque)
+        self._hits: dict[tuple[str, str], deque] = {}
+        self._sweeps = 0
+
+    def _evict(self, now: float) -> None:
+        # Drop keys whose newest hit is older than 1h (any window has passed).
+        stale = [k for k, dq in self._hits.items() if not dq or dq[-1] < now - 3600]
+        for k in stale:
+            self._hits.pop(k, None)
+        # If still over the cap after sweeping, drop the oldest-touched keys.
+        if len(self._hits) > self._MAX_KEYS:
+            for k in sorted(self._hits, key=lambda k: self._hits[k][-1] if self._hits[k] else 0
+                            )[: len(self._hits) - self._MAX_KEYS]:
+                self._hits.pop(k, None)
 
     def check(self, bucket: str, client: str, *, limit: int, window: float) -> bool:
         """Return True if allowed, False if the client is over the limit."""
         now = time.monotonic()
+        # Periodic housekeeping (cheap, amortized) + a hard ceiling.
+        self._sweeps += 1
+        if self._sweeps % 1000 == 0 or len(self._hits) > self._MAX_KEYS:
+            self._evict(now)
         key = (bucket, client)
-        dq = self._hits[key]
+        dq = self._hits.get(key)
+        if dq is None:
+            dq = self._hits[key] = deque()
         cutoff = now - window
         while dq and dq[0] < cutoff:
             dq.popleft()

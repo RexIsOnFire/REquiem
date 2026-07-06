@@ -25,6 +25,9 @@ email the maintainer. Do not file public issues for exploitable bugs.
 ### Per-user secrets
 - Each user's API keys are **encrypted at rest** (Fernet / AES-128-CBC+HMAC)
   with a server key derived from `REQUIEM_SECRET`. A DB leak yields ciphertext.
+- Ciphertext is **bound to `(user_id, key_name)`** — copying one row's ciphertext
+  into another user/slot fails to decrypt, so even a DB-write compromise can't
+  cross-decrypt keys.
 - Key values are **write-only** over the API — you can set them and see which
   are set, but never read them back.
 
@@ -43,7 +46,11 @@ email the maintainer. Do not file public issues for exploitable bugs.
   (CSP-clean).
 
 ### Input validation
-- **Email**: strict pattern + length cap (254).
+- **Email**: strict pattern (`\A…\Z` anchors, not `^…$` — blocks the trailing-
+  newline bypass), control-char rejection, length cap (254).
+- Hash and API-key-value validators likewise use `\A…\Z` so a trailing newline
+  cannot slip an injected character into an outbound request.
+- Session `sub` claim must be strict digits (no `int()` whitespace coercion).
 - **Password**: ≥10 chars, ≥3 character classes, length cap.
 - **Hashes**: must be exactly MD5/SHA1/SHA256 hex before any external call —
   blocks SSRF/injection via the path segment.
@@ -61,6 +68,9 @@ email the maintainer. Do not file public issues for exploitable bugs.
   direct peer IP unless `REQUIEM_TRUSTED_PROXIES=N` is set, in which case the
   client is read N hops from the right of XFF — an unforgeable position behind
   exactly N trusted proxies. This prevents rate-limit bypass via a spoofed XFF.
+- The limiter's memory is **bounded** (100k keys, with stale-key eviction) so an
+  attacker can't exhaust RAM by flooding the per-email bucket with unique
+  addresses.
 
 ### Authorization & SSRF
 - Per-user API keys are **always scoped to the session user id** — no

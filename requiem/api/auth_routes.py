@@ -51,10 +51,12 @@ def current_user(requiem_session: str | None = Cookie(default=None)) -> User | N
     payload = tokens.verify(requiem_session)
     if not payload:
         return None
-    try:
-        return get_store().get_user(int(payload["sub"]))
-    except (KeyError, ValueError):
+    sub = payload.get("sub")
+    # `sub` must be a strict positive-integer string — no whitespace/float/list
+    # coercion via int(). (Defense in depth; forgery already needs the secret.)
+    if not isinstance(sub, str) or not sub.isdigit():
         return None
+    return get_store().get_user(int(sub))
 
 
 def require_user(requiem_session: str | None = Cookie(default=None)) -> User:
@@ -64,11 +66,18 @@ def require_user(requiem_session: str | None = Cookie(default=None)) -> User:
     return user
 
 
-_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+# \A ... \Z (absolute anchors) — plain $ matches before a trailing newline, so
+# "user@x.com\n" would otherwise pass and inject a newline into logs/identity.
+_EMAIL_RE = re.compile(r"\A[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\Z")
 
 
 def _valid_email(email: str) -> bool:
-    return bool(email) and len(email) <= _MAX_EMAIL and bool(_EMAIL_RE.match(email))
+    if not email or len(email) > _MAX_EMAIL:
+        return False
+    # Reject any control character (NUL, CR, LF, tab) outright.
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in email):
+        return False
+    return bool(_EMAIL_RE.match(email))
 
 
 def _password_problem(password: str) -> str | None:
@@ -142,7 +151,8 @@ def list_keys(requiem_session: str | None = Cookie(default=None)):
 
 
 # API-key values may contain only these characters (all real keys/URLs do).
-_KEY_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/\-]*$")
+# \A ... \Z anchors so a trailing newline can't slip through.
+_KEY_VALUE_RE = re.compile(r"\A[A-Za-z0-9._:/\-]*\Z")
 
 # Keys that hold a URL must pass SSRF validation (public https host only).
 _URL_KEYS = {"CAPE_URL"}

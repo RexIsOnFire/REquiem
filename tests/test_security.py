@@ -154,6 +154,65 @@ def test_xff_spoof_does_not_bypass_rate_limit(client, monkeypatch):
     assert 429 in codes
 
 
+# --- trailing-newline validation bypass ---------------------------------
+def test_email_newline_bypass_rejected():
+    from requiem.api.auth_routes import _valid_email
+    assert _valid_email("user@x.com") is True
+    assert _valid_email("user@x.com\n") is False      # \Z, not $
+    assert _valid_email("user@x.com\x00") is False    # control char
+    assert _valid_email("user@x.com\r") is False
+
+
+def test_hash_newline_bypass_rejected():
+    from requiem.api.app import _valid_hash
+    assert _valid_hash("a" * 64) is True
+    assert _valid_hash("a" * 64 + "\n") is False
+    assert _valid_hash("a" * 63 + "g") is False       # non-hex
+
+
+def test_sub_claim_must_be_strict_digits(monkeypatch, tmp_path):
+    # A tampered sub with whitespace must not resolve (needs the secret anyway,
+    # but defense-in-depth against int() coercion).
+    from requiem.api.auth_routes import current_user
+    from requiem.auth import store as store_mod, tokens
+    import jwt
+    s = store_mod.get_store()
+    u = s.create_user("d@x.com", _STRONG)
+    tok = jwt.encode({"sub": f"{u.id} ", "iss": "requiem", "exp": 9999999999,
+                      "iat": 1, "nbf": 1}, tokens._secret(), algorithm="HS256")
+    assert current_user(tok) is None
+
+
+# --- ciphertext binding (DB-write compromise) ---------------------------
+def test_key_ciphertext_bound_to_user(tmp_path):
+    import sqlite3
+    from requiem.auth.store import Store
+    s = Store(db_path=tmp_path / "bind.db")
+    a = s.create_user("a@x.com", _STRONG)
+    b = s.create_user("b@x.com", _STRONG)
+    s.set_key(a.id, "VT_API_KEY", "SECRET-AAA")
+    s.set_key(b.id, "VT_API_KEY", "SECRET-BBB")
+    conn = sqlite3.connect(s.db_path)
+    a_ct = conn.execute("SELECT value_encrypted FROM user_keys WHERE user_id=?",
+                        (a.id,)).fetchone()[0]
+    conn.execute("UPDATE user_keys SET value_encrypted=? WHERE user_id=?", (a_ct, b.id))
+    conn.commit()
+    # B must NOT be able to read A's key via substituted ciphertext.
+    assert s.get_keys(b.id).get("VT_API_KEY") != "SECRET-AAA"
+
+
+# --- rate limiter memory bound ------------------------------------------
+def test_rate_limiter_is_bounded():
+    from requiem.api.security import RateLimiter
+    rl = RateLimiter()
+    for i in range(3000):
+        rl.check("login", f"c{i}", limit=5, window=300)
+    # Correctness preserved after churn.
+    for _ in range(5):
+        assert rl.check("x", "same", limit=5, window=300) is True
+    assert rl.check("x", "same", limit=5, window=300) is False
+
+
 # --- IDOR: keys are always scoped to the session user -------------------
 def test_keys_scoped_to_user(client):
     from fastapi.testclient import TestClient

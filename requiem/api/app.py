@@ -152,7 +152,9 @@ def attack_matrix():
 
 # A hash must be exactly MD5 (32) / SHA1 (40) / SHA256 (64) hex — nothing else
 # is ever sent to external APIs (blocks SSRF / injection via the path segment).
-_HASH_RE = _re.compile(r"^[A-Fa-f0-9]{32}$|^[A-Fa-f0-9]{40}$|^[A-Fa-f0-9]{64}$")
+# \A ... \Z anchors (not ^ $) so a trailing newline can't sneak through and get
+# injected into an outbound API request.
+_HASH_RE = _re.compile(r"\A(?:[A-Fa-f0-9]{32}|[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})\Z")
 
 
 def _valid_hash(value: str) -> bool:
