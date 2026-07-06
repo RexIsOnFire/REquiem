@@ -213,6 +213,58 @@ def test_rate_limiter_is_bounded():
     assert rl.check("x", "same", limit=5, window=300) is False
 
 
+# --- ReDoS ---------------------------------------------------------------
+def test_domain_regex_no_redos():
+    import time
+    from requiem.static.strings_ioc import harvest_iocs
+    # The pattern that caused 5s+ catastrophic backtracking before the fix.
+    evil = ["a" * 20000 + "." + "A" * 20000 + ".com"]
+    t = time.perf_counter()
+    harvest_iocs(evil)
+    assert time.perf_counter() - t < 1.0  # must be near-instant now
+
+
+def test_domain_regex_still_correct():
+    from requiem.static.strings_ioc import harvest_iocs
+    r = harvest_iocs(["evil-c2.example.com", "www.malware.ru", "not_a_domain"])
+    assert "evil-c2.example.com" in r.domains
+    assert "www.malware.ru" in r.domains
+    assert "not_a_domain" not in r.domains
+
+
+# --- info disclosure -----------------------------------------------------
+def test_docs_and_config_not_exposed(client):
+    # Interactive docs / OpenAPI and the server-config endpoint must be off.
+    assert client.get("/docs").status_code == 404
+    assert client.get("/redoc").status_code == 404
+    assert client.get("/openapi.json").status_code == 404
+    assert client.get("/config").status_code == 404
+
+
+# --- session invalidation ------------------------------------------------
+def test_session_invalidated_when_user_deleted(client):
+    import sqlite3
+    from requiem.auth import store as store_mod
+    client.post("/auth/register", json={"email": "u@x.com", "password": _STRONG})
+    assert client.get("/auth/me").status_code == 200
+    conn = sqlite3.connect(store_mod.get_store().db_path)
+    conn.execute("DELETE FROM users WHERE email=?", ("u@x.com",))
+    conn.commit()
+    # The still-valid cookie must not grant access to a deleted account.
+    assert client.get("/auth/me").status_code == 401
+
+
+# --- filename sanitization ----------------------------------------------
+def test_filename_sanitization_blocks_breakout():
+    from requiem.api.app import _safe_filename
+    for evil in ['a"; filename="x', "a\r\nSet-Cookie: e=1", "../../etc/passwd",
+                 "file‮gpj.exe", "\x00\x01"]:
+        out = _safe_filename(evil)
+        assert out.isascii()
+        for bad in ('"', "\r", "\n", "/", "\\", "\x00", "‮", ";"):
+            assert bad not in out
+
+
 # --- IDOR: keys are always scoped to the session user -------------------
 def test_keys_scoped_to_user(client):
     from fastapi.testclient import TestClient

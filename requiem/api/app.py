@@ -33,8 +33,18 @@ except Exception as exc:  # pragma: no cover
 
 from . import security as _sec
 
-app = FastAPI(title="ReQuiem", version="0.1.0",
-              description="All-in-one malware analysis workbench")
+# Interactive docs / OpenAPI schema reveal the whole API surface, so they are
+# OFF by default and only enabled when REQUIEM_ENABLE_DOCS=1 (dev).
+import os as _os_app
+_DOCS = _os_app.environ.get("REQUIEM_ENABLE_DOCS", "0") == "1"
+
+app = FastAPI(
+    title="ReQuiem", version="0.1.0",
+    description="All-in-one malware analysis workbench",
+    docs_url="/docs" if _DOCS else None,
+    redoc_url="/redoc" if _DOCS else None,
+    openapi_url="/openapi.json" if _DOCS else None,
+)
 
 # CORS: only explicitly allowed origins may make credentialed (cookie) requests.
 app.add_middleware(
@@ -126,16 +136,10 @@ def healthz():
     return {"status": "ok", "engine": "0.1.0"}
 
 
-@app.get("/config")
-def config_status():
-    """Which integrations are configured (key values never exposed)."""
-    from ..core import config
-    status = config.configured_status()
-    return {
-        "configured": status,
-        "intel_ready": status["VT_API_KEY"] or status["MALWAREBAZAAR_API_KEY"],
-        "sandbox_ready": status["CAPE_URL"],
-    }
+# NOTE: the single-user `/config` endpoint (which exposed the server's own
+# key-configuration state) was removed — in the multi-user web app it was pure
+# information disclosure. Per-user key status lives behind auth at GET /keys.
+# The CLI `requiem config` reads the environment directly, unaffected.
 
 
 @app.get("/attack/matrix")

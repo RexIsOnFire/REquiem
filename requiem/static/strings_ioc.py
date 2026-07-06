@@ -18,8 +18,13 @@ _UTF16_RE = re.compile((rb"(?:[\x20-\x7e]\x00){%d,}" % _MIN_LEN))
 
 _IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _URL_RE = re.compile(r"\b(?:https?|ftp)://[^\s\"'<>]{4,}", re.I)
+# NOTE: the previous pattern used a nested quantifier
+# ``(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+`` which catastrophically
+# backtracks (5s+ on a 20k 'a....' string) — a ReDoS. This version uses a
+# flat label class with a bounded repeat and a hard length ceiling on each
+# label, so matching is linear.
 _DOMAIN_RE = re.compile(
-    r"\b(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+"
+    r"\b(?:[a-z0-9][a-z0-9\-]{0,62}\.){1,8}"
     r"(?:com|net|org|io|ru|cn|info|biz|xyz|top|onion|co|us|uk|de|nl)\b", re.I)
 _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 _REG_RE = re.compile(
