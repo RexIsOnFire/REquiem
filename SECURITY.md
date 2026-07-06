@@ -158,14 +158,27 @@ email the maintainer. Do not file public issues for exploitable bugs.
 Set these on the API service:
 
 ```
-REQUIEM_SECRET=<long random value>          # signs tokens, encrypts keys
+REQUIEM_SECRET=<long random value>          # signs tokens, encrypts keys (REQUIRED)
 REQUIEM_COOKIE_SECURE=1                       # HTTPS-only cookie
 REQUIEM_COOKIE_SAMESITE=none                  # cross-origin frontend/api
-REQUIEM_ALLOWED_ORIGINS=https://your-frontend # exact origin(s)
+REQUIEM_ALLOWED_ORIGINS=https://your-frontend # exact origin(s), no wildcard
 REQUIEM_DATA_DIR=/var/requiem-data            # persistent disk for the DB
+REQUIEM_TRUSTED_PROXIES=1                      # trust N proxy hops for client IP
+REQUIEM_ENABLE_DOCS=0                          # keep /docs + /openapi.json off
+REQUIEM_PDF_CONCURRENCY=2                      # cap concurrent Chromium renders
 ```
 
-The included `render.yaml` sets all of these.
+The included `render.yaml` sets all of these (and mounts a persistent disk).
+
+Pre-flight checklist:
+- [ ] `REQUIEM_SECRET` is set to a long random value (else it is generated and
+      persisted to the data disk — fine for a single host, but set it explicitly
+      to survive disk loss and to share across instances).
+- [ ] Served over **HTTPS** (so `Secure` cookies and HSTS apply).
+- [ ] `REQUIEM_ALLOWED_ORIGINS` is your exact frontend origin, never `*`.
+- [ ] A **persistent disk** is mounted at `REQUIEM_DATA_DIR` (users/keys survive
+      restarts).
+- [ ] `/docs`, `/redoc`, `/openapi.json` return 404 in production.
 
 ## Resource & caching
 - **PDF render concurrency is capped** (semaphore, default 2, via
