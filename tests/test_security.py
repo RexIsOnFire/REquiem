@@ -452,6 +452,41 @@ def test_dotenv_values_are_literal():
     assert config._parse_line("export E=`id`") == ("E", "`id`")
 
 
+# --- server-side token revocation on logout -----------------------------
+def test_logout_revokes_outstanding_tokens(client):
+    client.post("/auth/register", json={"email": "u@x.com", "password": _STRONG})
+    stolen = client.cookies.get("requiem_session")
+    assert client.get("/auth/me").status_code == 200
+    client.post("/auth/logout")
+    # Replay the pre-logout token from a fresh client -> must be revoked.
+    from fastapi.testclient import TestClient
+    from requiem.api.app import app
+    other = TestClient(app)
+    r = other.get("/auth/me", headers={"Cookie": f"requiem_session={stolen}"})
+    assert r.status_code == 401
+
+
+def test_stale_epoch_token_rejected():
+    from requiem.auth import store as store_mod, tokens
+    from requiem.api.auth_routes import current_user
+    s = store_mod.get_store()
+    u = s.create_user("e@x.com", _STRONG)
+    tok = tokens.issue(u.id, u.email, epoch=s.token_epoch(u.id))
+    assert current_user(tok) is not None
+    s.bump_token_epoch(u.id)              # e.g. logout elsewhere
+    assert current_user(tok) is None      # old epoch -> revoked
+
+
+# --- password unicode normalization -------------------------------------
+def test_password_nfc_nfd_equivalence():
+    import unicodedata
+    from requiem.auth.crypto import hash_password, verify_password
+    pw = "café-Passw0rd!"
+    nfc, nfd = unicodedata.normalize("NFC", pw), unicodedata.normalize("NFD", pw)
+    assert nfc.encode() != nfd.encode()          # genuinely different bytes
+    assert verify_password(nfd, hash_password(nfc)) is True
+
+
 # --- IDOR: keys are always scoped to the session user -------------------
 def test_keys_scoped_to_user(client):
     from fastapi.testclient import TestClient

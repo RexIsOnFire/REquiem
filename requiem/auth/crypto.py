@@ -30,7 +30,17 @@ _MAXMEM = 128 * _SCRYPT_N * _SCRYPT_R * 2
 
 
 # --- passwords -----------------------------------------------------------
+def normalize_password(password: str) -> str:
+    """NFC-normalize so the same password entered on different keyboards/IMEs
+    (which may emit different Unicode byte sequences) hashes/verifies
+    consistently, and so combining-character padding can't game a length check.
+    """
+    import unicodedata
+    return unicodedata.normalize("NFC", password or "")
+
+
 def hash_password(password: str) -> str:
+    password = normalize_password(password)
     salt = secrets.token_bytes(16)
     dk = hashlib.scrypt(password.encode("utf-8"), salt=salt,
                         n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=_DKLEN,
@@ -42,6 +52,7 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, stored: str) -> bool:
     try:
+        password = normalize_password(password)
         scheme, n, r, p, salt_b64, hash_b64 = stored.split("$")
         if scheme != "scrypt":
             return False
