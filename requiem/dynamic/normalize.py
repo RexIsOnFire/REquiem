@@ -113,11 +113,28 @@ def norm_severity(value: Any) -> str:
 
 
 # --- the one mapper ------------------------------------------------------
-def _map_processes(procs: list[NormProcess]) -> list[dict]:
-    return [{
-        "pid": p.pid, "name": p.name, "cmdline": p.cmdline,
-        "children": _map_processes(p.children),
-    } for p in procs]
+# Bounds so a hostile/MITM'd sandbox report can't inflate ReQuiem's report.
+_MAX_NODES = 2000
+_MAX_DEPTH = 32
+_MAX_ROWS = 2000
+_FIELD = 512
+
+
+def _map_processes(procs: list[NormProcess], _budget=None, _depth=0) -> list[dict]:
+    if _budget is None:
+        _budget = [_MAX_NODES]
+    out = []
+    if _depth > _MAX_DEPTH:
+        return out
+    for p in procs:
+        if _budget[0] <= 0:
+            break
+        _budget[0] -= 1
+        out.append({
+            "pid": p.pid, "name": str(p.name)[:_FIELD], "cmdline": str(p.cmdline)[:_FIELD],
+            "children": _map_processes(p.children, _budget, _depth + 1),
+        })
+    return out
 
 
 def _classify_region(r: NormRegion) -> tuple[str, bool, str]:
@@ -177,13 +194,17 @@ def _map_signatures(sigs: list[NormSignature], source: str) -> list[Finding]:
 
 
 def to_behavior(norm: NormalizedReport, *, backend_name: str) -> DynamicBehavior:
-    """Turn a :class:`NormalizedReport` into :class:`DynamicBehavior`."""
+    """Turn a :class:`NormalizedReport` into :class:`DynamicBehavior`.
+
+    All collections are bounded so a hostile or MITM'd sandbox report can't
+    inflate the resulting DynamicBehavior into a memory/DoS bomb.
+    """
     beh = DynamicBehavior(executed=True, backend=backend_name, simulated=False)
     beh.process_tree = _map_processes(norm.processes)
-    beh.network = list(norm.network)
-    beh.filesystem = list(norm.files)
-    beh.registry = list(norm.registry)
-    beh.memory_map = _map_regions(norm.regions)
+    beh.network = list(norm.network)[:_MAX_ROWS]
+    beh.filesystem = list(norm.files)[:_MAX_ROWS]
+    beh.registry = list(norm.registry)[:_MAX_ROWS]
+    beh.memory_map = _map_regions(norm.regions[:_MAX_ROWS])
     beh.heap_timeline = _heap_from_regions(beh.memory_map)
-    beh.memory = _map_signatures(norm.signatures, backend_name)
+    beh.memory = _map_signatures(norm.signatures[:_MAX_ROWS], backend_name)
     return beh

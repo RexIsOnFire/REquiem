@@ -12,6 +12,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from ..dynamic.sandbox_http import no_redirect_opener
 
 from ..core.models import DynamicBehavior
 from . import normalize as N
@@ -28,7 +29,7 @@ def _headers(key: str) -> dict[str, str]:
 def _get(url: str, key: str) -> tuple[int, object]:
     req = urllib.request.Request(url, headers=_headers(key))
     try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+        with no_redirect_opener.open(req, timeout=_TIMEOUT) as resp:
             return resp.status, json.loads(resp.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         return e.code, None

@@ -17,6 +17,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from ..dynamic.sandbox_http import no_redirect_opener
 
 from ..core.models import IntelResult
 from .base import IntelProvider
@@ -29,7 +30,7 @@ def _http_post(url: str, data: dict, headers: dict) -> tuple[int, dict | None]:
     body = urllib.parse.urlencode(data).encode()
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+        with no_redirect_opener.open(req, timeout=_TIMEOUT) as resp:
             return resp.status, json.loads(resp.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         return e.code, None
@@ -40,7 +41,7 @@ def _http_post(url: str, data: dict, headers: dict) -> tuple[int, dict | None]:
 def _http_get(url: str, headers: dict) -> tuple[int, dict | None]:
     req = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+        with no_redirect_opener.open(req, timeout=_TIMEOUT) as resp:
             return resp.status, json.loads(resp.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         return e.code, None
