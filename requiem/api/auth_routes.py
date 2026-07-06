@@ -33,8 +33,10 @@ _MAX_KEY_VALUE = 8192
 
 def _set_session(resp: Response, user: User) -> None:
     # Cookie policy comes from central security config (SameSite/Secure adapt
-    # to same-origin vs cross-origin HTTPS deploys).
-    resp.set_cookie(tokens.COOKIE_NAME, tokens.issue(user.id, user.email),
+    # to same-origin vs cross-origin HTTPS deploys). The token carries the
+    # user's current token_epoch so logout can revoke it server-side.
+    epoch = get_store().token_epoch(user.id)
+    resp.set_cookie(tokens.COOKIE_NAME, tokens.issue(user.id, user.email, epoch),
                     max_age=7 * 24 * 3600, **_sec.cookie_kwargs())
 
 
@@ -63,7 +65,12 @@ def current_user(requiem_session: str | None = Cookie(default=None)) -> User | N
     # coercion via int(). (Defense in depth; forgery already needs the secret.)
     if not isinstance(sub, str) or not sub.isdigit():
         return None
-    return get_store().get_user(int(sub))
+    uid = int(sub)
+    store = get_store()
+    # Reject tokens minted under a stale epoch (revoked by logout / pw change).
+    if payload.get("ep", 0) != store.token_epoch(uid):
+        return None
+    return store.get_user(uid)
 
 
 def require_user(requiem_session: str | None = Cookie(default=None)) -> User:
@@ -89,7 +96,10 @@ def _valid_email(email: str) -> bool:
 
 def _password_problem(password: str) -> str | None:
     """Return a human message if the password is too weak, else None."""
-    if not password or len(password) < 10:
+    import unicodedata
+    # Normalize first so combining-character padding can't inflate the length.
+    password = unicodedata.normalize("NFC", password or "")
+    if len(password) < 10:
         return "password must be at least 10 characters"
     if len(password) > _MAX_PASSWORD:
         return "password is too long"
@@ -139,7 +149,13 @@ def login(request: Request, resp: Response,
 
 
 @router.post("/auth/logout")
-def logout(resp: Response):
+def logout(resp: Response, requiem_session: str | None = Cookie(default=None)):
+    # Bump the user's token epoch so the just-logged-out token (and any other
+    # outstanding sessions) can no longer authenticate — real server-side
+    # revocation, not just clearing the client cookie.
+    user = current_user(requiem_session)
+    if user is not None:
+        get_store().bump_token_epoch(user.id)
     resp.delete_cookie(tokens.COOKIE_NAME, **_sec.cookie_kwargs())
     return {"ok": True}
 

@@ -18,7 +18,14 @@ email the maintainer. Do not file public issues for exploitable bugs.
 - Sessions are **signed JWTs (HS256)** in an **HttpOnly** cookie (JS cannot read
   it → XSS cannot exfiltrate it).
 - JWT verification **pins the algorithm** and **requires `exp`, `iat`, `nbf`,
-  `sub`, `iss`** — rejecting `alg=none`, non-expiring, and issuer-spoofed tokens.
+  `sub`, `iss`** — rejecting `alg=none`, non-expiring, future-dated (`nbf`), and
+  issuer-spoofed tokens.
+- **Server-side revocation**: each token carries a per-user `token_epoch`;
+  **logout bumps the epoch**, so a stolen/outstanding token replayed after
+  logout is rejected — real revocation, not just clearing the client cookie.
+- **Passwords are NFC-normalized** before hashing/verification, so the same
+  password entered in different Unicode forms authenticates consistently and
+  combining-character padding can't game the length policy.
 - Cookie flags adapt to the deployment: `Secure` + `SameSite=None` for
   cross-origin HTTPS, `SameSite=Lax` for same-origin.
 
@@ -179,5 +186,7 @@ The included `render.yaml` sets all of these.
   are only fully resolved in Next 15; both concern features ReQuiem does not use
   (image-optimizer remote patterns, insecure RSC/Server Actions), so they are
   not exploitable here.
-- **JWTs are not individually revocable** before expiry (7-day TTL). Rotating
-  `REQUIEM_SECRET` invalidates all sessions if needed.
+- **Session revocation is per-user, not per-token.** Logout (and any future
+  password change) bumps the user's `token_epoch`, invalidating *all* of that
+  user's outstanding tokens at once — there is no individual-token denylist.
+  Rotating `REQUIEM_SECRET` invalidates every session globally.

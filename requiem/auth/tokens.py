@@ -25,12 +25,13 @@ def _secret() -> bytes:
 _ISS = "requiem"
 
 
-def issue(user_id: int, email: str) -> str:
+def issue(user_id: int, email: str, epoch: int = 0) -> str:
     now = _dt.datetime.now(_dt.timezone.utc)
     payload = {
         "sub": str(user_id),
         "email": email,
         "iss": _ISS,
+        "ep": int(epoch),               # token epoch for server-side revocation
         "iat": int(now.timestamp()),
         "nbf": int(now.timestamp()),
         "exp": int((now + _TTL).timestamp()),

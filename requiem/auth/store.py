@@ -102,6 +102,13 @@ class Store:
                 );
                 """
             )
+            # token_epoch enables server-side session revocation: a JWT carries
+            # the epoch it was minted under; bumping it (logout / password change)
+            # invalidates all outstanding tokens for that user. Added via a
+            # migration-safe ALTER so existing DBs upgrade cleanly.
+            cols = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
+            if "token_epoch" not in cols:
+                c.execute("ALTER TABLE users ADD COLUMN token_epoch INTEGER NOT NULL DEFAULT 0")
 
     # --- users -----------------------------------------------------------
     def create_user(self, email: str, password: str) -> User:
@@ -129,6 +136,21 @@ class Store:
         if not row or not ok:
             return None
         return User(id=row["id"], email=row["email"], created_at=row["created_at"])
+
+    def token_epoch(self, user_id: int) -> int:
+        with self._conn() as c:
+            row = c.execute("SELECT token_epoch FROM users WHERE id = ?",
+                            (user_id,)).fetchone()
+        return int(row["token_epoch"]) if row else -1
+
+    def bump_token_epoch(self, user_id: int) -> int:
+        """Invalidate all outstanding sessions for a user (logout / pw change)."""
+        with self._lock, self._conn() as c:
+            c.execute("UPDATE users SET token_epoch = token_epoch + 1 WHERE id = ?",
+                      (user_id,))
+            row = c.execute("SELECT token_epoch FROM users WHERE id = ?",
+                            (user_id,)).fetchone()
+        return int(row["token_epoch"]) if row else 0
 
     def get_user(self, user_id: int) -> User | None:
         with self._conn() as c:
