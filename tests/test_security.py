@@ -290,6 +290,42 @@ def test_pdf_render_pool_is_capped():
     assert pdf._render_slots._value == pdf._MAX_CONCURRENT
 
 
+# --- password hash robustness -------------------------------------------
+def test_verify_password_survives_tampered_hash():
+    from requiem.auth.crypto import verify_password, hash_password
+    # Huge-N tampered hash must return False, never raise (no memory DoS / 500).
+    assert verify_password("x", "scrypt$99999999$8$1$AAAA$BBBB") is False
+    assert verify_password("x", "garbage") is False
+    assert verify_password("x", "") is False
+    good = hash_password("correct-horse")
+    assert verify_password("correct-horse", good) is True
+    assert verify_password("wrong", good) is False
+
+
+# --- request body size limits -------------------------------------------
+def test_oversized_auth_body_rejected(client):
+    big = {"email": "u@x.com", "password": _STRONG, "pad": "A" * 20000}
+    assert client.post("/auth/register", json=big).status_code == 413
+
+
+def test_global_body_ceiling(client):
+    r = client.post("/analyze",
+                    headers={"Content-Length": str(100 * 1024 * 1024),
+                             "X-Requested-With": "fetch"},
+                    content=b"x")
+    assert r.status_code == 413
+
+
+# --- key-binding delimiter safety ---------------------------------------
+def test_key_binding_handles_embedded_delimiter(tmp_path):
+    from requiem.auth.store import Store
+    s = Store(db_path=tmp_path / "d.db")
+    u = s.create_user("a@x.com", _STRONG)
+    # Value containing the \x00 delimiter must round-trip and not confuse binding.
+    s.set_key(u.id, "VT_API_KEY", "a\x00b\x00c")
+    assert s.get_keys(u.id).get("VT_API_KEY") == "a\x00b\x00c"
+
+
 # --- IDOR: keys are always scoped to the session user -------------------
 def test_keys_scoped_to_user(client):
     from fastapi.testclient import TestClient

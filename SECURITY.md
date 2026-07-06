@@ -48,6 +48,14 @@ email the maintainer. Do not file public issues for exploitable bugs.
 ### Input validation
 - **Email**: strict pattern (`\A…\Z` anchors, not `^…$` — blocks the trailing-
   newline bypass), control-char rejection, length cap (254).
+- **Request bodies are bounded** — a global 64 MB ceiling (rejected via
+  Content-Length before buffering) plus a tight 16 KB cap on auth endpoints, so
+  an oversized body can't exhaust memory before validation runs.
+- **`verify_password` is crash-proof** — scrypt cost params from a stored hash
+  are range-bounded (no multi-GB allocation from a tampered hash) and any
+  parse/crypto error yields a failed verification, never a 500.
+- Encrypted-key values are bound as `user_id\x00name\x00value` with a bounded
+  split, so an embedded delimiter in a value can't confuse the binding.
 - Hash and API-key-value validators likewise use `\A…\Z` so a trailing newline
   cannot slip an injected character into an outbound request.
 - Session `sub` claim must be strict digits (no `int()` whitespace coercion).

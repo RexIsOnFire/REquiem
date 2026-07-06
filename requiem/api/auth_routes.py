@@ -44,6 +44,13 @@ def _rate_limit(request: Request, bucket: str, *, limit: int, window: float) -> 
         raise HTTPException(status_code=429, detail="too many requests, slow down")
 
 
+def _cap_body(request: Request, max_bytes: int = 16 * 1024) -> None:
+    """Auth bodies are tiny (email+password); reject anything larger early."""
+    clen = request.headers.get("content-length")
+    if clen and clen.isdigit() and int(clen) > max_bytes:
+        raise HTTPException(status_code=413, detail="request body too large")
+
+
 def current_user(requiem_session: str | None = Cookie(default=None)) -> User | None:
     """FastAPI dependency — resolves the session cookie to a User, or None."""
     if not requiem_session:
@@ -98,6 +105,7 @@ def _password_problem(password: str) -> str | None:
 @router.post("/auth/register")
 def register(request: Request, resp: Response,
              email: str = Body(...), password: str = Body(...)):
+    _cap_body(request)
     _rate_limit(request, "register", limit=5, window=3600)  # 5/hour/IP
     email = (email or "").strip().lower()
     if not _valid_email(email):
@@ -117,6 +125,7 @@ def register(request: Request, resp: Response,
 def login(request: Request, resp: Response,
           email: str = Body(...), password: str = Body(...)):
     # Rate limit per-IP AND per-email to blunt credential stuffing/brute force.
+    _cap_body(request)
     _rate_limit(request, "login-ip", limit=10, window=300)          # 10/5min/IP
     _rate_limit(request, f"login-user:{(email or '').lower()[:254]}",
                 limit=5, window=300)                                # 5/5min/email
