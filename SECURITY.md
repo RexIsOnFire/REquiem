@@ -105,6 +105,11 @@ email the maintainer. Do not file public issues for exploitable bugs.
 - **No ReDoS**: the IOC domain regex was rewritten to remove a nested quantifier
   that backtracked for 5s+ on adversarial input; it now matches in <200ms on the
   same 40k-char payload. All input regexes verified linear.
+- **Analysis engine is DoS-bounded**: IOC harvesting caps the scanned blob
+  (4 MB); the disassembler has instruction/block/function budgets (a 10 MB NOP
+  sled or an infinite self-jump PE completes in ~1s); YARA and section parsing
+  are fuzz-verified crash-free. Upload size is capped at 32 MB and analysis is
+  rate-limited (20/min).
 
 ### Information disclosure
 - Interactive **API docs (`/docs`, `/redoc`, `/openapi.json`) are disabled** by
