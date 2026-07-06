@@ -152,6 +152,16 @@ class Store:
                             (user_id,)).fetchone()
         return int(row["token_epoch"]) if row else 0
 
+    def get_user_if_epoch(self, user_id: int, epoch: int) -> User | None:
+        """Return the user only if the given token epoch is current — one query
+        that both authorizes (epoch) and loads the user (session hot path)."""
+        with self._conn() as c:
+            row = c.execute("SELECT id, email, created_at, token_epoch "
+                            "FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row or int(row["token_epoch"]) != epoch:
+            return None
+        return User(id=row["id"], email=row["email"], created_at=row["created_at"])
+
     def get_user(self, user_id: int) -> User | None:
         with self._conn() as c:
             row = c.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()

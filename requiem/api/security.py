@@ -112,8 +112,14 @@ class RateLimiter:
                             )[: len(self._hits) - self._MAX_KEYS]:
                 self._hits.pop(k, None)
 
-    def check(self, bucket: str, client: str, *, limit: int, window: float) -> bool:
-        """Return True if allowed, False if the client is over the limit."""
+    def check(self, bucket: str, client: str, *, limit: int, window: float,
+              peek: bool = False) -> bool:
+        """Return True if allowed, False if over the limit.
+
+        ``peek=True`` tests the limit WITHOUT recording a hit — useful to gate a
+        request before knowing whether it should count (e.g. only count failed
+        logins), so success paths don't consume the budget.
+        """
         now = time.monotonic()
         # Periodic housekeeping (cheap, amortized) + a hard ceiling.
         self._sweeps += 1
@@ -128,7 +134,8 @@ class RateLimiter:
             dq.popleft()
         if len(dq) >= limit:
             return False
-        dq.append(now)
+        if not peek:
+            dq.append(now)
         return True
 
 

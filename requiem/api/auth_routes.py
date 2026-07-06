@@ -66,11 +66,11 @@ def current_user(requiem_session: str | None = Cookie(default=None)) -> User | N
     if not isinstance(sub, str) or not sub.isdigit():
         return None
     uid = int(sub)
-    store = get_store()
-    # Reject tokens minted under a stale epoch (revoked by logout / pw change).
-    if payload.get("ep", 0) != store.token_epoch(uid):
+    ep = payload.get("ep", 0)
+    if not isinstance(ep, int):
         return None
-    return store.get_user(uid)
+    # Single query that both checks the epoch (revocation) and loads the user.
+    return get_store().get_user_if_epoch(uid, ep)
 
 
 def require_user(requiem_session: str | None = Cookie(default=None)) -> User:
@@ -134,15 +134,21 @@ def register(request: Request, resp: Response,
 @router.post("/auth/login")
 def login(request: Request, resp: Response,
           email: str = Body(...), password: str = Body(...)):
-    # Rate limit per-IP AND per-email to blunt credential stuffing/brute force.
     _cap_body(request)
+    # Per-IP limit is the primary brute-force gate (an attacker controls few IPs).
     _rate_limit(request, "login-ip", limit=10, window=300)          # 10/5min/IP
-    _rate_limit(request, f"login-user:{(email or '').lower()[:254]}",
-                limit=5, window=300)                                # 5/5min/email
+    # The per-email limit only counts FAILED attempts and has a higher threshold,
+    # so an attacker can't lock out a victim who then logs in with the right
+    # password — a successful login is never blocked by this bucket.
+    email_key = f"login-fail:{(email or '').lower()[:254]}"
+    if not _sec.rate_limiter.check(email_key, "", limit=20, window=900, peek=True):
+        raise HTTPException(status_code=429, detail="too many failed logins; try later")
     if len(email or "") > _MAX_EMAIL or len(password or "") > _MAX_PASSWORD:
         raise HTTPException(status_code=400, detail="invalid credentials")
     user = get_store().authenticate(email or "", password or "")
     if user is None:
+        # Only a failure consumes the per-email budget.
+        _sec.rate_limiter.check(email_key, "", limit=20, window=900)
         raise HTTPException(status_code=401, detail="invalid email or password")
     _set_session(resp, user)
     return {"id": user.id, "email": user.email}
