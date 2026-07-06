@@ -72,6 +72,9 @@ _SECURITY_HEADERS = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-site",
     "Content-Security-Policy": _CSP,
+    # API responses are dynamic and often carry per-user data — never let a
+    # browser or shared proxy cache them.
+    "Cache-Control": "no-store",
 }
 
 
