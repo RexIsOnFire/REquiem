@@ -127,6 +127,19 @@ REQUIEM_DATA_DIR=/var/requiem-data            # persistent disk for the DB
 
 The included `render.yaml` sets all of these.
 
+## Resource & caching
+- **PDF render concurrency is capped** (semaphore, default 2, via
+  `REQUIEM_PDF_CONCURRENCY`) so a burst of report requests can't fork-bomb
+  headless Chromium and exhaust host memory; a saturated pool returns the HTML
+  fallback instead of queuing.
+- **`Cache-Control: no-store` on all API responses** — per-user data is never
+  cached by the browser or a shared proxy.
+
+## Dependencies
+- Audited with `pip-audit` and `npm audit`; vulnerable packages upgraded
+  (`python-multipart`, `starlette`, `urllib3`, `requests`, `PyJWT`, Next.js).
+  Secure version floors are pinned in `requirements.txt` / `pyproject.toml`.
+
 ## Known residual items
 
 - **Rate limiting is per-instance (in-memory).** For multi-instance

@@ -265,6 +265,31 @@ def test_filename_sanitization_blocks_breakout():
             assert bad not in out
 
 
+# --- cache-control on sensitive responses -------------------------------
+def test_no_store_cache_on_api(client):
+    client.post("/auth/register", json={"email": "u@x.com", "password": _STRONG})
+    for path in ("/auth/me", "/keys", "/healthz"):
+        assert client.get(path).headers.get("cache-control") == "no-store"
+
+
+# --- mass assignment -----------------------------------------------------
+def test_mass_assignment_ignored(client):
+    r = client.post("/auth/register",
+                    json={"email": "m@x.com", "password": _STRONG,
+                          "id": 9999, "is_admin": True, "role": "admin"})
+    assert r.status_code == 200
+    # Auto-assigned id, not the injected 9999.
+    assert r.json()["id"] != 9999
+
+
+# --- PDF render concurrency cap -----------------------------------------
+def test_pdf_render_pool_is_capped():
+    from requiem.report import pdf
+    # A bounded semaphore exists and starts at the configured max.
+    assert pdf._MAX_CONCURRENT >= 1
+    assert pdf._render_slots._value == pdf._MAX_CONCURRENT
+
+
 # --- IDOR: keys are always scoped to the session user -------------------
 def test_keys_scoped_to_user(client):
     from fastapi.testclient import TestClient

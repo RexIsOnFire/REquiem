@@ -11,10 +11,10 @@ capstone>=5.0.0         # CFG disassembly of the entry point
 # --- HTTP API ---
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
-python-multipart>=0.0.9 # required by FastAPI for file uploads
+python-multipart>=0.0.31 # required by FastAPI for file uploads
 
 # --- Auth (multi-user accounts + encrypted per-user API keys) ---
-PyJWT>=2.8.0            # session tokens
+PyJWT>=2.13.0            # session tokens
 cryptography>=42.0.0   # Fernet encryption of stored keys
 # (password hashing uses stdlib hashlib.scrypt; SQLite is stdlib)
 
