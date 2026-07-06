@@ -368,6 +368,53 @@ def test_yara_scan_never_crashes():
         yara_scan.scan(data)  # must not raise
 
 
+# --- malformed report payloads (from_dict) ------------------------------
+def test_report_pdf_rejects_malformed_payloads(client):
+    import json
+    for bad in ({}, {"identity": None}, {"identity": {"filename": ["x"]}},
+                {"verdict_confidence": {"name": "INJECT", "value": 1}},
+                {"findings": "not a list"}):
+        r = client.post("/report/pdf", data=json.dumps(bad),
+                        headers={"Content-Type": "application/json",
+                                 "X-Requested-With": "fetch"})
+        assert r.status_code in (400, 413)  # never 500
+
+
+# --- concurrent key-write race ------------------------------------------
+def test_concurrent_key_writes_no_corruption(tmp_path):
+    import sqlite3
+    import threading
+    from requiem.auth.store import Store
+    s = Store(db_path=tmp_path / "kr.db")
+    u = s.create_user("a@x.com", _STRONG)
+    threads = [threading.Thread(target=lambda i=i: s.set_key(u.id, "VT_API_KEY", f"v{i}"))
+               for i in range(30)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    n = sqlite3.connect(s.db_path).execute(
+        "SELECT COUNT(*) FROM user_keys WHERE user_id=? AND name=?",
+        (u.id, "VT_API_KEY")).fetchone()[0]
+    assert n == 1  # exactly one row, no duplication
+
+
+# --- HTML report security headers ---------------------------------------
+def test_html_report_hardened_headers(client):
+    import struct
+    mz = b"MZ" + b"\x00" * 0x3a + struct.pack("<I", 0x80)
+    mz += b"\x00" * (0x80 - len(mz))
+    coff = struct.pack("<H H I I I H H", 0x8664, 1, 0, 0, 0, 0xE0, 0x22)
+    opt = (struct.pack("<H B B I I I I I", 0x20B, 14, 0, 0x400, 0, 0, 0x1000, 0)
+           + struct.pack("<Q", 0x140000000) + struct.pack("<I I", 0x1000, 0x200))
+    opt += b"\x00" * (0xE0 - len(opt))
+    pe = mz + b"PE\x00\x00" + coff + opt + b"\x00" * 100
+    r = client.post("/analyze/html",
+                    files={"file": ("x.exe", pe, "application/octet-stream")})
+    assert r.headers.get("x-content-type-options") == "nosniff"
+    assert "script-src 'none'" in r.headers.get("content-security-policy", "")
+
+
 # --- IDOR: keys are always scoped to the session user -------------------
 def test_keys_scoped_to_user(client):
     from fastapi.testclient import TestClient
