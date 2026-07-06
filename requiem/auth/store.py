@@ -125,13 +125,31 @@ class Store:
         if not value:
             self.delete_key(user_id, name)
             return
-        enc = self.box.encrypt(value)
+        # Bind the ciphertext to (user_id, name) so a row copied to another
+        # user/slot fails to decrypt — defeats ciphertext-substitution if the DB
+        # is ever write-compromised. (Fernet lacks AAD, so we prefix + verify.)
+        enc = self.box.encrypt(self._bind(user_id, name, value))
         with self._lock, self._conn() as c:
             c.execute(
                 "INSERT INTO user_keys(user_id, name, value_encrypted) VALUES (?,?,?) "
                 "ON CONFLICT(user_id, name) DO UPDATE SET value_encrypted = excluded.value_encrypted",
                 (user_id, name, enc),
             )
+
+    @staticmethod
+    def _bind(user_id: int, name: str, value: str) -> str:
+        return f"{user_id}\x00{name}\x00{value}"
+
+    def _unbind(self, user_id: int, name: str, blob: str | None) -> str | None:
+        if blob is None:
+            return None
+        parts = blob.split("\x00", 2)
+        if len(parts) != 3:
+            return None
+        uid, nm, value = parts
+        if uid != str(user_id) or nm != name:
+            return None  # ciphertext belongs to a different user/slot — reject
+        return value
 
     def delete_key(self, user_id: int, name: str) -> None:
         with self._lock, self._conn() as c:
@@ -145,7 +163,7 @@ class Store:
             ).fetchall()
         out: dict[str, str] = {}
         for r in rows:
-            val = self.box.decrypt(r["value_encrypted"])
+            val = self._unbind(user_id, r["name"], self.box.decrypt(r["value_encrypted"]))
             if val:
                 out[r["name"]] = val
         return out
