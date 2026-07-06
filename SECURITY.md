@@ -83,6 +83,15 @@ email the maintainer. Do not file public issues for exploitable bugs.
 ### Authorization & SSRF
 - Per-user API keys are **always scoped to the session user id** — no
   user-supplied identifier, so there is no IDOR handle.
+- **Outbound HTTP does not follow redirects** — all intel/sandbox calls use a
+  no-redirect opener, so a compromised or MITM'd upstream can't bounce our
+  authenticated request to an internal/metadata address.
+- **External reports are bounded** — the cloud/sandbox mappers cap the process
+  tree (2000 nodes, depth 32), network/region/signature rows (2000 each), and
+  field lengths (≤512), so a hostile VT/HA/Triage/CAPE response can't inflate
+  ReQuiem's report into a memory/DoS bomb.
+- The `.env` loader treats all values as **literal strings** — never eval'd,
+  shell-expanded, or passed to a subprocess.
 - URL-valued keys (`CAPE_URL`) are **SSRF-validated**: http(s) only, and the
   host must not resolve to a private/loopback/link-local/reserved address or a
   cloud-metadata endpoint (`169.254.169.254`, `metadata.google.internal`).

@@ -16,6 +16,19 @@ class SandboxError(RuntimeError):
     """Raised when a sandbox is unavailable or the analysis cannot complete."""
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse to follow redirects — a compromised/MITM'd upstream must not be
+    able to bounce our authenticated request to an internal/metadata address
+    (SSRF). Raises so the caller sees a normal HTTP error."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+# A shared opener that never auto-follows 3xx redirects.
+no_redirect_opener = urllib.request.build_opener(_NoRedirect)
+
+
 def multipart(fields: dict[str, str], filename: str, data: bytes,
               *, file_field: str = "file") -> tuple[bytes, str]:
     boundary = f"----ReQuiemSbx{uuid.uuid4().hex}"
@@ -35,7 +48,7 @@ def multipart(fields: dict[str, str], filename: str, data: bytes,
 def get_json(url: str, headers: dict[str, str], timeout: int) -> dict:
     req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with no_redirect_opener.open(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         raise SandboxError(f"GET {url} -> HTTP {e.code}") from e
@@ -46,7 +59,7 @@ def get_json(url: str, headers: dict[str, str], timeout: int) -> dict:
 def post_json(url: str, headers: dict[str, str], body: bytes, timeout: int) -> dict:
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with no_redirect_opener.open(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         raise SandboxError(f"POST {url} -> HTTP {e.code}") from e

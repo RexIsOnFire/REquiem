@@ -415,6 +415,43 @@ def test_html_report_hardened_headers(client):
     assert "script-src 'none'" in r.headers.get("content-security-policy", "")
 
 
+# --- hostile external-report bounding -----------------------------------
+def test_cloud_report_is_bounded():
+    from requiem.dynamic import normalize as N
+    procs = [N.NormProcess(pid=i, name="p" * 5000) for i in range(50000)]
+    norm = N.NormalizedReport(processes=procs,
+                              network=[{"type": "x", "dest": "y"}] * 50000,
+                              signatures=[N.NormSignature(name="s")] * 50000)
+    beh = N.to_behavior(norm, backend_name="t")
+    assert len(beh.process_tree) <= 2000
+    assert len(beh.network) <= 2000
+    assert len(beh.memory) <= 2000
+    assert len(beh.process_tree[0]["name"]) <= 512
+
+
+def test_vt_report_is_bounded():
+    from requiem.intel import vt_behavior
+    tree = vt_behavior._process_tree(
+        {"processes_tree": [{"children": [{"children": []}]}] * 100000})
+    assert len(tree) <= 2000
+
+
+# --- SSRF: external HTTP does not follow redirects -----------------------
+def test_providers_use_no_redirect_opener():
+    from requiem.dynamic.sandbox_http import no_redirect_opener
+    # The opener must carry a redirect handler that refuses to follow.
+    names = [type(h).__name__ for h in no_redirect_opener.handlers]
+    assert any("NoRedirect" in n for n in names)
+
+
+# --- .env parser is injection-safe --------------------------------------
+def test_dotenv_values_are_literal():
+    from requiem.core import config
+    assert config._parse_line("K=$(whoami)") == ("K", "$(whoami)")
+    assert config._parse_line("K=a; rm -rf /") == ("K", "a; rm -rf /")
+    assert config._parse_line("export E=`id`") == ("E", "`id`")
+
+
 # --- IDOR: keys are always scoped to the session user -------------------
 def test_keys_scoped_to_user(client):
     from fastapi.testclient import TestClient
