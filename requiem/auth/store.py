@@ -59,6 +59,23 @@ class Store:
         self._lock = threading.Lock()
         self.box = SecretBox(self.data_dir)
         self._init_db()
+        self._restrict_permissions()
+
+    def _restrict_permissions(self) -> None:
+        """Best-effort 0600 on the DB (and its WAL/journal siblings) so the
+        encrypted user data isn't world-readable. No-op where the OS ignores
+        POSIX modes (e.g. Windows)."""
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            p = Path(str(self.db_path) + suffix)
+            if p.exists():
+                try:
+                    os.chmod(p, 0o600)
+                except OSError:
+                    pass
+        try:
+            os.chmod(self.data_dir, 0o700)
+        except OSError:
+            pass
 
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)

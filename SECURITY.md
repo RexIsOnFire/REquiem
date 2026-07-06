@@ -111,6 +111,15 @@ email the maintainer. Do not file public issues for exploitable bugs.
   are fuzz-verified crash-free. Upload size is capped at 32 MB and analysis is
   rate-limited (20/min).
 
+### Data-at-rest & deserialization
+- The SQLite DB (and its WAL/journal) and the server `.secret` are chmod'd to
+  **0600** and the data dir to **0700** (best-effort; POSIX hosts like Render).
+- The `/report/pdf` endpoint reconstructs a report from client JSON via
+  `from_dict`; it is fully guarded — a null/garbage/partial payload yields a
+  clean **400**, never a 500, and rendering failures fall back safely.
+- Concurrent writes to the same user key are race-free (lock + `ON CONFLICT`
+  upsert → exactly one row).
+
 ### Information disclosure
 - Interactive **API docs (`/docs`, `/redoc`, `/openapi.json`) are disabled** by
   default (enable only in dev with `REQUIEM_ENABLE_DOCS=1`).

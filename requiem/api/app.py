@@ -320,18 +320,27 @@ async def report_pdf(request: Request, payload: dict = Body(...)):
     if clen and clen.isdigit() and int(clen) > _MAX_JSON_BYTES:
         return JSONResponse(status_code=413, content={"error": "report too large"})
 
+    from ..core.models import FileIdentity
     try:
         report = AnalysisReport.from_dict(payload)
+        # from_dict tolerates partial dicts; ensure a usable identity exists so
+        # downstream rendering can't hit an AttributeError on a None/garbage one.
+        if not isinstance(report.identity, FileIdentity):
+            raise ValueError("missing identity")
+        stem = _safe_filename(report.identity.filename)
     except Exception:
         return JSONResponse(status_code=400, content={"error": "invalid report payload"})
 
-    stem = _safe_filename(report.identity.filename)
     try:
         pdf_bytes = await run_in_threadpool(pdf_report.render_pdf, report)
     except Exception:
         # PDFUnavailable OR any runtime render failure -> print-ready HTML.
-        return HTMLResponse(html.render(report),
-                            headers={"X-ReQuiem-PDF": "unavailable-html-fallback"})
+        try:
+            return HTMLResponse(html.render(report),
+                                headers={"X-ReQuiem-PDF": "unavailable-html-fallback"})
+        except Exception:
+            return JSONResponse(status_code=400,
+                                content={"error": "report could not be rendered"})
     return Response(content=pdf_bytes, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'})
 
