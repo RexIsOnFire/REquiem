@@ -94,6 +94,19 @@ email the maintainer. Do not file public issues for exploitable bugs.
   (validated: 5 MB adversarial input processes in < 0.3s).
 - Errors return a generic message; **no stack traces or internals** leak to
   clients (global exception handler logs server-side only).
+- **No ReDoS**: the IOC domain regex was rewritten to remove a nested quantifier
+  that backtracked for 5s+ on adversarial input; it now matches in <200ms on the
+  same 40k-char payload. All input regexes verified linear.
+
+### Information disclosure
+- Interactive **API docs (`/docs`, `/redoc`, `/openapi.json`) are disabled** by
+  default (enable only in dev with `REQUIEM_ENABLE_DOCS=1`).
+- The `/config` endpoint (which exposed the server's own key-configuration
+  state) was **removed** from the web API.
+- **Sessions are checked against the DB on every request** — deleting a user
+  immediately invalidates their outstanding session cookie.
+- `Content-Disposition` filenames are ASCII-sanitized against quote breakout,
+  CRLF injection, path traversal, and RTL-override (`U+202E`) tricks.
 
 ### Safe by design
 - Samples are **never executed locally** and **never redistributed/downloaded**.
