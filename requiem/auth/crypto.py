@@ -45,14 +45,22 @@ def verify_password(password: str, stored: str) -> bool:
         scheme, n, r, p, salt_b64, hash_b64 = stored.split("$")
         if scheme != "scrypt":
             return False
+        n_i, r_i, p_i = int(n), int(r), int(p)
+        # Bound the cost parameters so a tampered stored hash can't trigger a
+        # multi-gigabyte allocation (memory DoS) or overflow. Anything outside
+        # sane scrypt ranges is treated as a failed verification.
+        if not (2 <= n_i <= 2 ** 20 and 1 <= r_i <= 64 and 1 <= p_i <= 16):
+            return False
         salt = base64.b64decode(salt_b64)
         expected = base64.b64decode(hash_b64)
-        n_i, r_i, p_i = int(n), int(r), int(p)
+        if not (8 <= len(salt) <= 64 and 16 <= len(expected) <= 128):
+            return False
         dk = hashlib.scrypt(password.encode("utf-8"), salt=salt,
                             n=n_i, r=r_i, p=p_i, dklen=len(expected),
                             maxmem=128 * n_i * r_i * 2)
         return hmac.compare_digest(dk, expected)
-    except (ValueError, TypeError):
+    except Exception:
+        # Any parsing/crypto/overflow error -> failed verification, never a 500.
         return False
 
 

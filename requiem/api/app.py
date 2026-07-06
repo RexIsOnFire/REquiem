@@ -67,6 +67,22 @@ class _SecurityHeaders(BaseHTTPMiddleware):
         return resp
 
 
+class _BodySizeLimit(BaseHTTPMiddleware):
+    """Reject over-large request bodies before they're buffered into memory.
+
+    Uses the Content-Length header (Starlette buffers the full body, so this is
+    the cheapest place to cut off a memory-exhaustion body). File uploads have
+    their own higher cap enforced after read; this is a global ceiling.
+    """
+    _GLOBAL_MAX = 64 * 1024 * 1024  # 64 MB hard ceiling for any request
+
+    async def dispatch(self, request, call_next):
+        clen = request.headers.get("content-length")
+        if clen and clen.isdigit() and int(clen) > self._GLOBAL_MAX:
+            return JSONResponse(status_code=413, content={"error": "request too large"})
+        return await call_next(request)
+
+
 class _CSRFGuard(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if not _sec.csrf_ok(request):
@@ -77,6 +93,7 @@ class _CSRFGuard(BaseHTTPMiddleware):
 
 app.add_middleware(_SecurityHeaders)
 app.add_middleware(_CSRFGuard)
+app.add_middleware(_BodySizeLimit)
 
 
 @app.exception_handler(Exception)
