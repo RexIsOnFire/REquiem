@@ -98,6 +98,12 @@ def _valid_ipv4(s: str) -> bool:
     return True
 
 
+# Cap the total text scanned for IOCs. Real samples surface their indicators
+# well within a few MB of strings; a larger uniform blob is adversarial and only
+# multiplies regex work (a slow-DoS lever), so we bound it.
+_MAX_IOC_BLOB = 4 * 1024 * 1024
+
+
 def harvest_iocs(strings: list[str]) -> IOCSet:
     iocs = IOCSet()
     seen: dict[str, set[str]] = {}
@@ -109,6 +115,8 @@ def harvest_iocs(strings: list[str]) -> IOCSet:
             bucket.append(value)
 
     blob = "\n".join(strings)
+    if len(blob) > _MAX_IOC_BLOB:
+        blob = blob[:_MAX_IOC_BLOB]
 
     for m in _URL_RE.finditer(blob):
         url = m.group().rstrip(".,);")

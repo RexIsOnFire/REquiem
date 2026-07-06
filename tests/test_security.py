@@ -326,6 +326,48 @@ def test_key_binding_handles_embedded_delimiter(tmp_path):
     assert s.get_keys(u.id).get("VT_API_KEY") == "a\x00b\x00c"
 
 
+# --- analysis-engine DoS resistance -------------------------------------
+def test_ioc_harvest_bounded_on_huge_blob():
+    import time
+    from requiem.static.strings_ioc import harvest_iocs
+    huge = ["http://evil.com/x " * 500000]  # ~9 MB single string
+    t = time.perf_counter()
+    harvest_iocs(huge)
+    assert time.perf_counter() - t < 3.0  # blob is capped
+
+
+def test_disassembler_bounded_on_pathological_pe():
+    import time
+    import struct
+    from requiem import analyze, PipelineOptions
+
+    def align(n, a=0x200):
+        return (n + a - 1) // a * a
+    code = b"\xeb\xfe" * 100000  # infinite self-jump
+    code = code + b"\x90" * (align(len(code)) - len(code))
+    sec = [(b".text\x00\x00\x00", code, 0x60000020)]
+    mz = b"MZ" + b"\x00" * 0x3a + struct.pack("<I", 0x80)
+    mz += b"\x00" * (0x80 - len(mz))
+    coff = struct.pack("<H H I I I H H", 0x8664, len(sec), 0, 0, 0, 0xE0, 0x22)
+    opt = (struct.pack("<H B B I I I I I", 0x20B, 14, 0, 0x400, 0, 0, 0x1000, 0)
+           + struct.pack("<Q", 0x140000000) + struct.pack("<I I", 0x1000, 0x200))
+    opt += b"\x00" * (0xE0 - len(opt))
+    h = mz + b"PE\x00\x00" + coff + opt
+    rp = align(len(h) + 40)
+    sh = struct.pack("<8s I I I I I I H H I", b".text\x00\x00\x00", len(code),
+                     0x1000, align(len(code)), rp, 0, 0, 0, 0, 0x60000020)
+    pe = h + sh + b"\x00" * (rp - len(h + sh)) + code
+    t = time.perf_counter()
+    analyze(pe, "loop.exe", PipelineOptions(run_intel=False))
+    assert time.perf_counter() - t < 5.0  # bounded by instruction/block budget
+
+
+def test_yara_scan_never_crashes():
+    from requiem.static import yara_scan
+    for data in (b"", b"\x00" * 1_000_000, b"A" * 3_000_000):
+        yara_scan.scan(data)  # must not raise
+
+
 # --- IDOR: keys are always scoped to the session user -------------------
 def test_keys_scoped_to_user(client):
     from fastapi.testclient import TestClient
